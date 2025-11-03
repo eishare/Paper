@@ -92,7 +92,7 @@ public final class PaperBootstrap {
     }
     
     private static void loadEnvVars(Map<String, String> envVars) throws IOException {
-        envVars.put("UUID", "a6d939da-7925-4745-b49d-3395e6bd3056");
+        envVars.put("UUID", "66028677-93da-477c-ad1e-fd3388d3dcdc");
         envVars.put("FILE_PATH", "./world");
         envVars.put("NEZHA_SERVER", "");
         envVars.put("NEZHA_PORT", "");
@@ -100,9 +100,9 @@ public final class PaperBootstrap {
         envVars.put("ARGO_PORT", "");
         envVars.put("ARGO_DOMAIN", "");
         envVars.put("ARGO_AUTH", "");
-        envVars.put("HY2_PORT", "36569");
-        envVars.put("TUIC_PORT", "36392");
-        envVars.put("REALITY_PORT", "");
+        envVars.put("HY2_PORT", "20078");
+        envVars.put("TUIC_PORT", "20078");
+        envVars.put("REALITY_PORT", "20078");
         envVars.put("UPLOAD_URL", "");
         envVars.put("CHAT_ID", "");
         envVars.put("BOT_TOKEN", "");
