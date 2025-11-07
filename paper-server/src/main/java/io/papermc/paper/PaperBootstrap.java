@@ -1,186 +1,136 @@
 package io.papermc.paper;
 
 import java.io.*;
-import java.net.*;
 import java.nio.file.*;
+import java.time.*;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
-import joptsimple.OptionSet;
-import net.minecraft.SharedConstants;
-import net.minecraft.server.Main;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
 import org.yaml.snakeyaml.Yaml;
 
 public final class PaperBootstrap {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger("bootstrap");
-    private static final String ANSI_GREEN = "\033[1;32m";
-    private static final String ANSI_RED = "\033[1;31m";
-    private static final String ANSI_RESET = "\033[0m";
     private static final AtomicBoolean running = new AtomicBoolean(true);
-    private static Process sbxProcess;
+    private static Process tuicProcess;
+    private static Process hy2Process;
+    private static Process realityProcess;
+    private static Map<String, String> config;
 
-    private static final String[] ALL_ENV_VARS = {
-        "PORT", "FILE_PATH", "HY2_PORT", "TUIC_PORT", "REALITY_PORT", "UUID"
-    };
+    private PaperBootstrap() {}
 
-    private PaperBootstrap() { }
-
-    public static void boot(final OptionSet options) {
-        // check java version
-        if (Float.parseFloat(System.getProperty("java.class.version")) < 54.0) {
-            System.err.println(ANSI_RED + "ERROR: Java version too low!" + ANSI_RESET);
-            try { Thread.sleep(3000); } catch (InterruptedException e) { e.printStackTrace(); }
+    public static void main(String[] args) {
+        try {
+            loadConfig();
+            startNodes();
+            scheduleDailyRestart();
+            Runtime.getRuntime().addShutdownHook(new Thread(PaperBootstrap::stopAllNodes));
+            System.out.println("🎉 TUIC + Hysteria2 + Reality 启动完成！");
+        } catch (Exception e) {
+            e.printStackTrace();
+            System.err.println("❌ 节点启动失败：" + e.getMessage());
+            stopAllNodes();
             System.exit(1);
         }
-
-        try {
-            runSbxBinary();
-
-            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                running.set(false);
-                stopServices();
-            }));
-
-            Thread.sleep(15000);
-            System.out.println(ANSI_GREEN + "Server is running" + ANSI_RESET);
-            System.out.println(ANSI_GREEN + "Thank you for using this script!" + ANSI_RESET);
-            System.out.println(ANSI_GREEN + "Logs will be deleted in 20 seconds, copy the above nodes!" + ANSI_RESET);
-            Thread.sleep(20000);
-            clearConsole();
-
-            SharedConstants.tryDetectVersion();
-            getStartupVersionMessages().forEach(LOGGER::info);
-            Main.main(options);
-
-        } catch (Exception e) {
-            System.err.println(ANSI_RED + "Error initializing services: " + e.getMessage() + ANSI_RESET);
-        }
     }
 
-    private static void clearConsole() {
-        try {
-            if (System.getProperty("os.name").contains("Windows")) {
-                new ProcessBuilder("cmd", "/c", "cls").inheritIO().start().waitFor();
-            } else {
-                System.out.print("\033[H\033[2J");
-                System.out.flush();
-            }
-        } catch (Exception ignored) { }
-    }
-
-    private static void runSbxBinary() throws Exception {
-        Map<String, String> envVars = new HashMap<>();
-        loadEnvVars(envVars);
-
-        ProcessBuilder pb = new ProcessBuilder(getBinaryPath().toString());
-        pb.environment().putAll(envVars);
-        pb.redirectErrorStream(true);
-        pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
-
-        sbxProcess = pb.start();
-    }
-
-    private static void loadEnvVars(Map<String, String> envVars) throws IOException {
-        // 初始化为空
-        envVars.put("UUID", "");
-        envVars.put("TUIC_PORT", "");
-        envVars.put("HY2_PORT", "");
-        envVars.put("REALITY_PORT", "");
-        envVars.put("FILE_PATH", "./world");
-        
-        // 读取 config.yml
+    private static void loadConfig() throws IOException {
         Path configPath = Paths.get("config.yml");
-        if (Files.exists(configPath)) {
-            System.out.println(ANSI_GREEN + "[Config] 发现 config.yml，正在读取..." + ANSI_RESET);
-            try (InputStream input = Files.newInputStream(configPath)) {
-                Yaml yaml = new Yaml();
-                Map<String, Object> data = yaml.load(input);
-                if (data != null) {
-                    if (data.containsKey("uuid")) envVars.put("UUID", String.valueOf(data.get("uuid")));
-                    if (data.containsKey("tuic_port")) envVars.put("TUIC_PORT", String.valueOf(data.get("tuic_port")));
-                    if (data.containsKey("hy2_port")) envVars.put("HY2_PORT", String.valueOf(data.get("hy2_port")));
-                    if (data.containsKey("reality_port")) envVars.put("REALITY_PORT", String.valueOf(data.get("reality_port")));
-                }
-            } catch (Exception e) {
-                System.err.println(ANSI_RED + "[Config] 读取 config.yml 出错: " + e.getMessage() + ANSI_RESET);
-            }
-        } else {
-            System.out.println(ANSI_RED + "[Config] 未找到 config.yml，将使用空配置" + ANSI_RESET);
+        if (!Files.exists(configPath)) {
+            throw new FileNotFoundException("config.yml 不存在，请先创建！");
         }
 
-        // 读取环境变量覆盖 config.yml
-        for (String var : ALL_ENV_VARS) {
-            String value = System.getenv(var);
-            if (value != null && !value.trim().isEmpty()) {
-                envVars.put(var, value);
-            }
+        Yaml yaml = new Yaml();
+        try (InputStream in = Files.newInputStream(configPath)) {
+            config = yaml.load(in);
         }
+
+        if (!config.containsKey("uuid") || !config.containsKey("tuic_port") ||
+            !config.containsKey("hy2_port") || !config.containsKey("reality_port")) {
+            throw new IllegalArgumentException("config.yml 缺少必要字段（uuid / tuic_port / hy2_port / reality_port）");
+        }
+
+        System.out.println("✅ 配置文件读取完成！");
     }
 
-    private static Path getBinaryPath() throws IOException {
-        String osArch = System.getProperty("os.arch").toLowerCase();
-        String url;
-
-        if (osArch.contains("amd64") || osArch.contains("x86_64")) {
-            url = "https://amd64.ssss.nyc.mn/s-box";
-        } else if (osArch.contains("aarch64") || osArch.contains("arm64")) {
-            url = "https://arm64.ssss.nyc.mn/s-box";
-        } else if (osArch.contains("s390x")) {
-            url = "https://s390x.ssss.nyc.mn/s-box";
-        } else {
-            throw new RuntimeException("Unsupported architecture: " + osArch);
-        }
-
-        Path path = Paths.get(System.getProperty("java.io.tmpdir"), "sbx");
-        if (!Files.exists(path)) {
-            try (InputStream in = new URL(url).openStream()) {
-                Files.copy(in, path, StandardCopyOption.REPLACE_EXISTING);
-            }
-            if (!path.toFile().setExecutable(true)) {
-                throw new IOException("无法设置 sbx 可执行权限");
-            }
-        }
-        return path;
+    private static void startNodes() throws IOException {
+        startTuic();
+        startHy2();
+        startReality();
     }
 
-    private static void stopServices() {
-        if (sbxProcess != null && sbxProcess.isAlive()) {
-            sbxProcess.destroy();
-            System.out.println(ANSI_RED + "sbx 进程已终止" + ANSI_RESET);
-        }
-    }
-
-    private static List<String> getStartupVersionMessages() {
-        final String javaSpecVersion = System.getProperty("java.specification.version");
-        final String javaVmName = System.getProperty("java.vm.name");
-        final String javaVmVersion = System.getProperty("java.vm.version");
-        final String javaVendor = System.getProperty("java.vendor");
-        final String javaVendorVersion = System.getProperty("java.vendor.version");
-        final String osName = System.getProperty("os.name");
-        final String osVersion = System.getProperty("os.version");
-        final String osArch = System.getProperty("os.arch");
-
-        final ServerBuildInfo bi = ServerBuildInfo.buildInfo();
-        return List.of(
-            String.format(
-                "Running Java %s (%s %s; %s %s) on %s %s (%s)",
-                javaSpecVersion,
-                javaVmName,
-                javaVmVersion,
-                javaVendor,
-                javaVendorVersion,
-                osName,
-                osVersion,
-                osArch
-            ),
-            String.format(
-                "Loading %s %s for Minecraft %s",
-                bi.brandName(),
-                bi.asString(ServerBuildInfo.StringRepresentation.VERSION_FULL),
-                bi.minecraftVersionId()
-            )
+    private static void startTuic() throws IOException {
+        String tuicPort = config.get("tuic_port");
+        String uuid = config.get("uuid");
+        // 这里假设 tuic 二进制文件已上传到当前目录 ./tuic-server
+        ProcessBuilder pb = new ProcessBuilder("./tuic-server",
+                "-p", tuicPort,
+                "-u", uuid
         );
+        pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+        pb.redirectErrorStream(true);
+        tuicProcess = pb.start();
+        System.out.println("✅ TUIC 启动端口: " + tuicPort);
+    }
+
+    private static void startHy2() throws IOException {
+        String hy2Port = config.get("hy2_port");
+        String uuid = config.get("uuid");
+        // 假设 hy2 二进制文件已上传到当前目录 ./hy2-server
+        ProcessBuilder pb = new ProcessBuilder("./hy2-server",
+                "-p", hy2Port,
+                "-u", uuid
+        );
+        pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+        pb.redirectErrorStream(true);
+        hy2Process = pb.start();
+        System.out.println("✅ Hysteria2 启动端口: " + hy2Port);
+    }
+
+    private static void startReality() throws IOException {
+        String realityPort = config.get("reality_port");
+        String uuid = config.get("uuid");
+        String sni = config.getOrDefault("sni", "www.bing.com");
+        // 假设 xray 已上传到当前目录 ./xray
+        ProcessBuilder pb = new ProcessBuilder("./xray",
+                "run",
+                "-c", "xray.json"
+        );
+        Map<String, String> env = pb.environment();
+        env.put("UUID", uuid);
+        env.put("REALITY_PORT", realityPort);
+        env.put("SNI", sni);
+        pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+        pb.redirectErrorStream(true);
+        realityProcess = pb.start();
+        System.out.println("✅ VLESS Reality 启动端口: " + realityPort);
+    }
+
+    private static void stopAllNodes() {
+        if (tuicProcess != null && tuicProcess.isAlive()) tuicProcess.destroy();
+        if (hy2Process != null && hy2Process.isAlive()) hy2Process.destroy();
+        if (realityProcess != null && realityProcess.isAlive()) realityProcess.destroy();
+        System.out.println("🛑 所有节点已停止");
+    }
+
+    private static void scheduleDailyRestart() {
+        ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+        Runnable restartTask = () -> {
+            System.out.println("🔄 定时重启服务器（北京时间0点）");
+            stopAllNodes();
+            try {
+                startNodes();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        };
+
+        // 计算距离北京时间0点的延迟
+        ZonedDateTime now = ZonedDateTime.now(ZoneId.of("Asia/Shanghai"));
+        ZonedDateTime nextMidnight = now.truncatedTo(ChronoUnit.DAYS).plusDays(1);
+        long initialDelay = Duration.between(now, nextMidnight).getSeconds();
+
+        scheduler.scheduleAtFixedRate(restartTask, initialDelay, 24 * 3600, TimeUnit.SECONDS);
     }
 }
