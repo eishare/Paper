@@ -1,24 +1,322 @@
+Run chmod +x gradlew 
+
+Welcome to Gradle 8.14.3!
+
+Here are the highlights of this release:
+ - Java 24 support
+ - GraalVM Native Image toolchain selection
+ - Enhancements to test reporting
+ - Build Authoring improvements
+
+For more details see https://docs.gradle.org/8.14.3/release-notes.html
+
+Starting a Gradle Daemon (subsequent builds will be faster)
+Calculating task graph as no cached configuration is available for tasks: clean
+
+> Configure project :paper-server
+paperweight-core v2.0.0-beta.18 (running on 'Linux')
+
+> Task :paper-api:clean UP-TO-DATE
+> Task :paper-server:clean UP-TO-DATE
+
+BUILD SUCCESSFUL in 8s
+2 actionable tasks: 2 up-to-date
+Configuration cache entry stored.
+Calculating task graph as no cached configuration is available for tasks: applyPatches
+
+> Configure project :paper-server
+paperweight-core v2.0.0-beta.18 (running on 'Linux')
+
+> Task :paper-server:collectPaperATsFromPatches
+> Task :paper-server:mergePaperATs
+> Task :paper-server:downloadMcManifest
+> Task :paper-server:downloadMcVersionManifest
+> Task :paper-server:downloadMappings
+> Task :paper-server:downloadServerJar
+> Task :paper-server:downloadRuntimeClasspathSources
+> Task :paper-server:extractFromBundler
+> Task :paper-server:downloadMcLibrariesSources
+> Task :paper-server:indexLibraryFiles
+
+> Task :paper-server:importPaperLibraryFiles
+Importing 13 classes from library sources...
+
+> Task :paper-server:setupMacheResources
+Copy initial sources...
+Setup git repo...
+
+> Task :paper-server:extractMacheResources
+
+> Task :paper-server:applyResourcePatches
+Applied 6 patches
+
+> Task :paper-server:macheRemapJar
+> Task :paper-server:macheDecompileJar
+
+> Task :paper-server:setupMacheSources
+Copy initial sources...
+Setup git repo...
+Applying mache patches...
+Applied 80 mache patches
+Applying access transformers...
+
+> Task :paper-server:extractMacheSources
+
+> Task :paper-server:applySourcePatches
+Applied 882 patches
+
+> Task :paper-server:applyFilePatches
+> Task :paper-server:applyFeaturePatches
+> Task :paper-server:applyPatches
+
+BUILD SUCCESSFUL in 2m 2s
+20 actionable tasks: 20 executed
+Configuration cache entry stored.
+Calculating task graph as no cached configuration is available for tasks: createMojmapPaperclipJar
+
+> Configure project :paper-server
+paperweight-core v2.0.0-beta.18 (running on 'Linux')
+
+> Task :paper-api:generateApiVersioningFile
+> Task :paper-api:processResources NO-SOURCE
+> Task :paper-server:downloadMcManifest
+> Task :paper-server:downloadMcVersionManifest UP-TO-DATE
+> Task :paper-server:downloadServerJar UP-TO-DATE
+> Task :paper-server:extractFromBundler UP-TO-DATE
+> Task :paper-server:downloadMappings UP-TO-DATE
+> Task :paper-server:processLog4jPluginsResources NO-SOURCE
+> Task :paper-server:filterVanillaJar
+> Task :paper-server:cloneSpigotBuildData
+> Task :paper-server:unpackSpigotBuildData
+> Task :paper-server:processResources
+/home/runner/work/Paper/Paper/paper-api/src/main/java/org/bukkit/World.java:2522: warning: [dep-ann] deprecated item is not annotated with @Deprecated
+    public FallingBlock spawnFallingBlock(@NotNull Location location, @NotNull BlockData data) throws IllegalArgumentException;
+                        ^
+
+> Task :paper-api:compileJava
+/home/runner/work/Paper/Paper/paper-api/src/main/java/org/bukkit/entity/Player.java:3550: warning: [dep-ann] deprecated item is not annotated with @Deprecated
+    default @Nullable Firework boostElytra(final ItemStack firework) {
+                               ^
+
+> Task :paper-server:generateMappings
+> Task :paper-server:generateSpigotMappings
+
+> Task :paper-api:compileJava
+Note: Some input files use or override a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+Note: Some input files use or override a deprecated API that is marked for removal.
+Note: Recompile with -Xlint:removal for details.
+Note: Some input files use unchecked or unsafe operations.
+Note: Recompile with -Xlint:unchecked for details.
+2 warnings
+
+> Task :paper-api:classes
+> Task :paper-api:jar
+Note: Processing Log4j annotations
+Note: Annotations processed
+
+> Task :paper-server:compileLog4jPluginsJava
+Note: Processing Log4j annotations
+Note: No elements to process
+Note: /home/runner/work/Paper/Paper/paper-server/src/log4jPlugins/java/io/papermc/paper/logging/DelegateLogEvent.java uses or overrides a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+
+> Task :paper-server:log4jPluginsClasses
+
+> Task :paper-server:compileJava
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:1: error: illegal character: '#'
 #!/bin/bash  
-
+^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:1: error: class, interface, enum, or record expected
+#!/bin/bash  
+  ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:3: error: unclosed character literal
 export UUID=${UUID:-'fdeeda45-0a8e-4570-bcc6-d68c995f5830'} # 如开启哪吒v1,不同的平台需要改一下，否则会覆盖
+                    ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:3: error: unclosed character literal
+export UUID=${UUID:-'fdeeda45-0a8e-4570-bcc6-d68c995f5830'} # 如开启哪吒v1,不同的平台需要改一下，否则会覆盖
+                                                         ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:3: error: illegal character: '#'
+export UUID=${UUID:-'fdeeda45-0a8e-4570-bcc6-d68c995f5830'} # 如开启哪吒v1,不同的平台需要改一下，否则会覆盖
+                                                            ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:3: error: illegal character: '\uff0c'
+export UUID=${UUID:-'fdeeda45-0a8e-4570-bcc6-d68c995f5830'} # 如开启哪吒v1,不同的平台需要改一下，否则会覆盖
+                                                                                ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:4: error: empty character literal
 export NEZHA_SERVER=${NEZHA_SERVER:-''}       # v1哪吒填写形式：nezha.abc.com:8008,v0哪吒填写形式：nezha.abc.com
+                                    ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:4: error: illegal character: '#'
+export NEZHA_SERVER=${NEZHA_SERVER:-''}       # v1哪吒填写形式：nezha.abc.com:8008,v0哪吒填写形式：nezha.abc.com
+                                              ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:4: error: illegal character: '\uff1a'
+export NEZHA_SERVER=${NEZHA_SERVER:-''}       # v1哪吒填写形式：nezha.abc.com:8008,v0哪吒填写形式：nezha.abc.com
+                                                        ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:4: error: illegal character: '\uff1a'
+export NEZHA_SERVER=${NEZHA_SERVER:-''}       # v1哪吒填写形式：nezha.abc.com:8008,v0哪吒填写形式：nezha.abc.com
+                                                                                    ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:5: error: empty character literal
 export NEZHA_PORT=${NEZHA_PORT:-''}           # v1哪吒不要填写这个,v0哪吒agent端口为{443,8443,2053,2083,2087,2096}其中之一时自动开启tls
+                                ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:5: error: illegal character: '#'
+export NEZHA_PORT=${NEZHA_PORT:-''}           # v1哪吒不要填写这个,v0哪吒agent端口为{443,8443,2053,2083,2087,2096}其中之一时自动开启tls
+                                              ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:6: error: empty character literal
 export NEZHA_KEY=${NEZHA_KEY:-''}             # 哪吒v0-agent密钥或v1的NZ_CLIENT_SECRET
+                              ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:6: error: illegal character: '#'
+export NEZHA_KEY=${NEZHA_KEY:-''}             # 哪吒v0-agent密钥或v1的NZ_CLIENT_SECRET
+                                              ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:7: error: empty character literal
 export ARGO_DOMAIN=${ARGO_DOMAIN:-''}         # 固定隧道域名,留空即启用临时隧道
+                                  ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:7: error: illegal character: '#'
+export ARGO_DOMAIN=${ARGO_DOMAIN:-''}         # 固定隧道域名,留空即启用临时隧道
+                                              ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:8: error: empty character literal
 export ARGO_AUTH=${ARGO_AUTH:-''}             # 固定隧道token或json,留空即启用临时隧道
+                              ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:8: error: illegal character: '#'
+export ARGO_AUTH=${ARGO_AUTH:-''}             # 固定隧道token或json,留空即启用临时隧道
+                                              ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:9: error: unclosed character literal
 export CFIP=${CFIP:-'cf.877774.xyz'}          # argo节点优选域名或优选ip
+                    ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:9: error: unclosed character literal
+export CFIP=${CFIP:-'cf.877774.xyz'}          # argo节点优选域名或优选ip
+                                  ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:9: error: illegal character: '#'
+export CFIP=${CFIP:-'cf.877774.xyz'}          # argo节点优选域名或优选ip
+                                              ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:10: error: unclosed character literal
 export CFPORT=${CFPORT:-'443'}                # argo节点端口 
+                        ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:10: error: unclosed character literal
+export CFPORT=${CFPORT:-'443'}                # argo节点端口 
+                            ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:10: error: illegal character: '#'
+export CFPORT=${CFPORT:-'443'}                # argo节点端口 
+                                              ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:11: error: empty character literal
 export NAME=${NAME:-''}                       # 节点名称  
+                    ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:11: error: illegal character: '#'
+export NAME=${NAME:-''}                       # 节点名称  
+                                              ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:12: error: unclosed character literal
 export FILE_PATH=${FILE_PATH:-'./.npm'}       # 节点sub.txt保存路径  
+                              ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:12: error: unclosed character literal
+export FILE_PATH=${FILE_PATH:-'./.npm'}       # 节点sub.txt保存路径  
+                                     ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:12: error: illegal character: '#'
+export FILE_PATH=${FILE_PATH:-'./.npm'}       # 节点sub.txt保存路径  
+                                              ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:13: error: unclosed character literal
 export ARGO_PORT=${ARGO_PORT:-'8001'}         # argo端口 使用固定隧道token,cloudflare后台设置的端口需和这里对应
+                              ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:13: error: unclosed character literal
+export ARGO_PORT=${ARGO_PORT:-'8001'}         # argo端口 使用固定隧道token,cloudflare后台设置的端口需和这里对应
+                                   ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:13: error: illegal character: '#'
+export ARGO_PORT=${ARGO_PORT:-'8001'}         # argo端口 使用固定隧道token,cloudflare后台设置的端口需和这里对应
+                                              ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:14: error: empty character literal
 export TUIC_PORT=${TUIC_PORT:-''}             # Tuic 端口，支持多端口玩具可填写，否则不动
+                              ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:14: error: illegal character: '#'
+export TUIC_PORT=${TUIC_PORT:-''}             # Tuic 端口，支持多端口玩具可填写，否则不动
+                                              ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:14: error: illegal character: '\uff0c'
+export TUIC_PORT=${TUIC_PORT:-''}             # Tuic 端口，支持多端口玩具可填写，否则不动
+                                                       ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:14: error: illegal character: '\uff0c'
+export TUIC_PORT=${TUIC_PORT:-''}             # Tuic 端口，支持多端口玩具可填写，否则不动
+                                                                  ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:15: error: empty character literal
 export HY2_PORT=${HY2_PORT:-''}               # Hy2 端口，支持多端口玩具可填写，否则不动
+                            ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:15: error: illegal character: '#'
+export HY2_PORT=${HY2_PORT:-''}               # Hy2 端口，支持多端口玩具可填写，否则不动
+                                              ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:15: error: illegal character: '\uff0c'
+export HY2_PORT=${HY2_PORT:-''}               # Hy2 端口，支持多端口玩具可填写，否则不动
+                                                      ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:15: error: illegal character: '\uff0c'
+export HY2_PORT=${HY2_PORT:-''}               # Hy2 端口，支持多端口玩具可填写，否则不动
+                                                                 ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:16: error: empty character literal
 export REALITY_PORT=${REALITY_PORT:-''}       # reality 端口,支持多端口玩具可填写，否则不动   
+                                    ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:16: error: illegal character: '#'
+export REALITY_PORT=${REALITY_PORT:-''}       # reality 端口,支持多端口玩具可填写，否则不动   
+                                              ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:16: error: illegal character: '\uff0c'
+export REALITY_PORT=${REALITY_PORT:-''}       # reality 端口,支持多端口玩具可填写，否则不动   
+                                                                     ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:17: error: empty character literal
 export CHAT_ID=${CHAT_ID:-''}                 # TG chat_id，可在https://t.me/laowang_serv00_bot 获取
+                          ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:17: error: illegal character: '#'
+export CHAT_ID=${CHAT_ID:-''}                 # TG chat_id，可在https://t.me/laowang_serv00_bot 获取
+                                              ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:17: error: illegal character: '\uff0c'
+export CHAT_ID=${CHAT_ID:-''}                 # TG chat_id，可在https://t.me/laowang_serv00_bot 获取
+                                                          ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:18: error: empty character literal
 export BOT_TOKEN=${BOT_TOKEN:-''}             # TG bot_token, 使用自己的bot需要填写,使用上方的bot不用填写,不会给别人发送
+                              ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:18: error: illegal character: '#'
+export BOT_TOKEN=${BOT_TOKEN:-''}             # TG bot_token, 使用自己的bot需要填写,使用上方的bot不用填写,不会给别人发送
+                                              ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:19: error: empty character literal
 export UPLOAD_URL=${UPLOAD_URL:-''}  # 订阅自动上传地址,没有可不填,需要填部署Merge-sub项目后的首页地址,例如：https://merge.zabc.net
+                                ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:19: error: illegal character: '#'
+export UPLOAD_URL=${UPLOAD_URL:-''}  # 订阅自动上传地址,没有可不填,需要填部署Merge-sub项目后的首页地址,例如：https://merge.zabc.net
+                                     ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:19: error: illegal character: '\uff1a'
+export UPLOAD_URL=${UPLOAD_URL:-''}  # 订阅自动上传地址,没有可不填,需要填部署Merge-sub项目后的首页地址,例如：https://merge.zabc.net
+                                                                               ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:20: error: unclosed character literal
 export DISABLE_ARGO=${DISABLE_ARGO:-'false'}  # 是否禁用argo, true为禁用,false为不禁用
-
-echo "aWYgWyAtZiAiLmVudiIgXTsgdGhlbgogICAgIyDkvb/nlKggc2VkIOenu+mZpCBleHBvcnQg5YWz6ZSu5a2X77yM5bm26L+H5ruk5rOo6YeK6KGMCiAgICBzZXQgLW8gYWxsZXhwb3J0ICAjIOS4tOaXtuW8gOWQr+iHquWKqOWvvOWHuuWPmOmHjwogICAgc291cmNlIDwoZ3JlcCAtdiAnXiMnIC5lbnYgfCBzZWQgJ3MvXmV4cG9ydCAvLycgKQogICAgc2V0ICtvIGFsbGV4cG9ydCAgIyDlhbPpl63oh6rliqjlr7zlh7oKZmkKClsgISAtZCAiJHtGSUxFX1BBVEh9IiBdICYmIG1rZGlyIC1wICIke0ZJTEVfUEFUSH0iCgpkZWxldGVfb2xkX25vZGVzKCkgewogIFtbIC16ICRVUExPQURfVVJMIHx8ICEgLWYgIiR7RklMRV9QQVRIfS9zdWIudHh0IiBdXSAmJiByZXR1cm4KICBvbGRfbm9kZXM9JChiYXNlNjQgLWQgIiR7RklMRV9QQVRIfS9zdWIudHh0IiB8IGdyZXAgLUUgJyh2bGVzc3x2bWVzc3x0cm9qYW58aHlzdGVyaWEyfHR1aWMpOi8vJykKICBbWyAteiAkb2xkX25vZGVzIF1dICYmIHJldHVybgoKICBqc29uX2RhdGE9J3sibm9kZXMiOiBbJwogIGZvciBub2RlIGluICRvbGRfbm9kZXM7IGRvCiAgICAgIGpzb25fZGF0YSs9IlwiJG5vZGVcIiwiCiAgZG9uZQogIGpzb25fZGF0YT0ke2pzb25fZGF0YSUsfSAgCiAganNvbl9kYXRhKz0nXX0nCgogIGN1cmwgLVggREVMRVRFICIkVVBMT0FEX1VSTC9hcGkvZGVsZXRlLW5vZGVzIiBcCiAgICAgICAgLUggIkNvbnRlbnQtVHlwZTogYXBwbGljYXRpb24vanNvbiIgXAogICAgICAgIC1kICIkanNvbl9kYXRhIiA+IC9kZXYvbnVsbCAyPiYxCn0KZGVsZXRlX29sZF9ub2RlcwoKcm0gLXJmIGJvb3QubG9nIGNvbmZpZy5qc29uIHR1bm5lbC5qc29uIHR1bm5lbC55bWwgIiR7RklMRV9QQVRIfS9zdWIudHh0IiA+L2Rldi9udWxsIDI+JjEKCmFyZ29fY29uZmlndXJlKCkgewogIGlmIFsgIiRESVNBQkxFX0FSR08iID09ICd0cnVlJyBdOyB0aGVuCiAgICBlY2hvIC1lICJcZVsxOzMybURpc2FibGUgYXJnbyB0dW5uZWxcZVswbSIKICAgIHJldHVybgogIGZpCiAgaWYgW1sgLXogJEFSR09fQVVUSCB8fCAteiAkQVJHT19ET01BSU4gXV07IHRoZW4KICAgIGVjaG8gLWUgIlxlWzE7MzJtQVJHT19ET01BSU4gb3IgQVJHT19BVVRIIHZhcmlhYmxlIGlzIGVtcHR5LCB1c2UgcXVpY2sgdHVubmVsc1xlWzBtIiAgIAogICAgcmV0dXJuCiAgZmkKCiAgaWYgW1sgJEFSR09fQVVUSCA9fiBUdW5uZWxTZWNyZXQgXV07IHRoZW4KICAgIGVjaG8gJEFSR09fQVVUSCA+ICR7RklMRV9QQVRIfS90dW5uZWwuanNvbgogICAgY2F0ID4gdHVubmVsLnltbCA8PCBFT0YKdHVubmVsOiAkKGN1dCAtZFwiIC1mMTIgPDw8ICIkQVJHT19BVVRIIikKY3JlZGVudGlhbHMtZmlsZTogJHtGSUxFX1BBVEh9L3R1bm5lbC5qc29uCnByb3RvY29sOiBodHRwMgoKaW5ncmVzczoKICAtIGhvc3RuYW1lOiAkQVJHT19ET01BSU4KICAgIHNlcnZpY2U6IGh0dHA6Ly9sb2NhbGhvc3Q6JEFSR09fUE9SVAogICAgb3JpZ2luUmVxdWVzdDoKICAgICAgbm9UTFNWZXJpZnk6IHRydWUKICAtIHNlcnZpY2U6IGh0dHBfc3RhdHVzOjQwNApFT0YKICBlbHNlCiAgICBlY2hvIC1lICJcZVsxOzMybVVzaW5nIHRva2VuIGNvbm5lY3QgdG8gdHVubmVsLHBsZWFzZSBzZXQgJEFSR09fUE9SVCBpbiBjbG91ZGZsYXJlIHR1bm5lbFxlWzBtIgogIGZpCn0KYXJnb19jb25maWd1cmUKd2FpdAoKZG93bmxvYWRfYW5kX3J1bigpIHsKQVJDSD0kKHVuYW1lIC1tKSAmJiBGSUxFX0lORk89KCkKaWYgWyAiJEFSQ0giID09ICJhcm0iIF0gfHwgWyAiJEFSQ0giID09ICJhcm02NCIgXSB8fCBbICIkQVJDSCIgPT0gImFhcmNoNjQiIF07IHRoZW4KICAgIEJBU0VfVVJMPSJodHRwczovL2FybTY0LnNzc3MubnljLm1uIgplbGlmIFsgIiRBUkNIIiA9PSAiYW1kNjQiIF0gfHwgWyAiJEFSQ0giID09ICJ4ODZfNjQiIF0gfHwgWyAiJEFSQ0giID09ICJ4ODYiIF07IHRoZW4KICAgIEJBU0VfVVJMPSJodHRwczovL2FtZDY0LnNzc3MubnljLm1uIgplbGlmIFsgIiRBUkNIIiA9PSAiczM5MHgiIF0gfHwgWyAiJEFSQ0giID09ICJzMzkwIiBdOyB0aGVuCiAgICBCQVNFX1VSTD0iaHR0cHM6Ly9zMzkweC5zc3NzLm55Yy5tbiIKZWxzZQogICAgZWNobyAiVW5zdXBwb3J0ZWQgYXJjaGl0ZWN0dXJlOiAkQVJDSCIKICAgIGV4aXQgMQpmaQpGSUxFX0lORk89KCIkQkFTRV9VUkwvc2Igd2ViIiAiJEJBU0VfVVJML2JvdCBib3QiKQoKaWYgWyAtbiAiJE5FWkhBX1NFUlZFUiIgXSAmJiBbIC1uICIkTkVaSEFfUE9SVCIgXSAmJiBbIC1uICIkTkVaSEFfS0VZIiBdOyB0aGVuCiAgICBGSUxFX0lORk8rPSgiJEJBU0VfVVJML2FnZW50IG5wbSIpCmVsaWYgWyAtbiAiJE5FWkhBX1NFUlZFUiIgXSAmJiBbIC1uICIkTkVaSEFfS0VZIiBdOyB0aGVuCiAgICBGSUxFX0lORk8rPSgiJEJBU0VfVVJML3YxIHBocCIpCiAgICBORVpIQV9UTFM9JChjYXNlICIke05FWkhBX1NFUlZFUiMjKjp9IiBpbiA0NDN8ODQ0M3wyMDk2fDIwODd8MjA4M3wyMDUzKSBlY2hvIC1uIHRydWU7OyAqKSBlY2hvIC1uIGZhbHNlOzsgZXNhYykKICAgIGNhdCA+ICIke0ZJTEVfUEFUSH0vY29uZmlnLnlhbWwiIDw8IEVPRgpjbGllbnRfc2VjcmV0OiAke05FWkhBX0tFWX0KZGVidWc6IGZhbHNlCmRpc2FibGVfYXV0b191cGRhdGU6IHRydWUKZGlzYWJsZV9jb21tYW5kX2V4ZWN1dGU6IGZhbHNlCmRpc2FibGVfZm9yY2VfdXBkYXRlOiB0cnVlCmRpc2FibGVfbmF0OiBmYWxzZQpkaXNhYmxlX3NlbmRfcXVlcnk6IGZhbHNlCmdwdTogZmFsc2UKaW5zZWN1cmVfdGxzOiB0cnVlCmlwX3JlcG9ydF9wZXJpb2Q6IDE4MDAKcmVwb3J0X2RlbGF5OiA0CnNlcnZlcjogJHtORVpIQV9TRVJWRVJ9CnNraXBfY29ubmVjdGlvbl9jb3VudDogdHJ1ZQpza2lwX3Byb2NzX2NvdW50OiB0cnVlCnRlbXBlcmF0dXJlOiBmYWxzZQp0bHM6ICR7TkVaSEFfVExTfQp1c2VfZ2l0ZWVfdG9fdXBncmFkZTogZmFsc2UKdXNlX2lwdjZfY291bnRyeV9jb2RlOiBmYWxzZQp1dWlkOiAke1VVSUR9CkVPRgplbHNlCiAgICBlY2hvIC1lICJcZVsxOzM1bXNraXAgZG93bmxvYWQgbmV6aGFcZVswbSIKZmkKCmRlY2xhcmUgLUEgRklMRV9NQVAKZ2VuZXJhdGVfcmFuZG9tX25hbWUoKSB7CiAgICBsb2NhbCBjaGFycz1hYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ejEyMzQ1Njc4OTAKICAgIGxvY2FsIG5hbWU9IiIKICAgIGZvciBpIGluIHsxLi42fTsgZG8KICAgICAgICBuYW1lPSIkbmFtZSR7Y2hhcnM6UkFORE9NJSR7I2NoYXJzfToxfSIKICAgIGRvbmUKICAgIGVjaG8gIiRuYW1lIgp9CmRvd25sb2FkX2ZpbGUoKSB7CiAgICBsb2NhbCBVUkw9JDEKICAgIGxvY2FsIE5FV19GSUxFTkFNRT0kMgoKICAgIGlmIGNvbW1hbmQgLXYgY3VybCA+L2Rldi9udWxsIDI+JjE7IHRoZW4KICAgICAgICBjdXJsIC1MIC1zUyAtbyAiJE5FV19GSUxFTkFNRSIgIiRVUkwiCiAgICAgICAgZWNobyAtZSAiXGVbMTszMm1Eb3dubG9hZGVkICRORVdfRklMRU5BTUUgYnkgY3VybFxlWzBtIgogICAgZWxpZiBjb21tYW5kIC12IHdnZXQgPi9kZXYvbnVsbCAyPiYxOyB0aGVuCiAgICAgICAgd2dldCAtcSAtTyAiJE5FV19GSUxFTkFNRSIgIiRVUkwiCiAgICAgICAgZWNobyAtZSAiXGVbMTszMm1Eb3dubG9hZGVkICRORVdfRklMRU5BTUUgYnkgd2dldFxlWzBtIgogICAgZWxzZQogICAgICAgIGVjaG8gLWUgIlxlWzE7MzNtTmVpdGhlciBjdXJsIG5vciB3Z2V0IGlzIGF2YWlsYWJsZSBmb3IgZG93bmxvYWRpbmdcZVswbSIKICAgICAgICBleGl0IDEKICAgIGZpCn0KZm9yIGVudHJ5IGluICIke0ZJTEVfSU5GT1tAXX0iOyBkbwogICAgVVJMPSQoZWNobyAiJGVudHJ5IiB8IGN1dCAtZCAnICcgLWYgMSkKICAgIFJBTkRPTV9OQU1FPSQoZ2VuZXJhdGVfcmFuZG9tX25hbWUpCiAgICBORVdfRklMRU5BTUU9IiR7RklMRV9QQVRIfS8kUkFORE9NX05BTUUiCiAgICAKICAgIGRvd25sb2FkX2ZpbGUgIiRVUkwiICIkTkVXX0ZJTEVOQU1FIgogICAgCiAgICBjaG1vZCAreCAiJE5FV19GSUxFTkFNRSIKICAgIEZJTEVfTUFQWyQoZWNobyAiJGVudHJ5IiB8IGN1dCAtZCAnICcgLWYgMildPSIkTkVXX0ZJTEVOQU1FIgpkb25lCndhaXQKCiMg5qOA5p+lcmVhbGl0eeWvhumSpeaWh+S7tuaYr+WQpuWtmOWcqO+8jOWtmOWcqOWImeivu+WPlu+8jOWQpuWImeeUn+aIkOaWsOeahAppZiBbIC1mICIke0ZJTEVfUEFUSH0va2V5LnR4dCIgXTsgdGhlbgogICAgIyDlsJ3or5Xor7vlj5blr4bpkqUKICAgIHByaXZhdGVfa2V5PSQoZ3JlcCAiUHJpdmF0ZUtleToiICIke0ZJTEVfUEFUSH0va2V5LnR4dCIgfCBhd2sgJ3twcmludCAkMn0nKQogICAgcHVibGljX2tleT0kKGdyZXAgIlB1YmxpY0tleToiICIke0ZJTEVfUEFUSH0va2V5LnR4dCIgfCBhd2sgJ3twcmludCAkMn0nKQogICAgCiAgICBpZiBbIC1uICIkcHJpdmF0ZV9rZXkiIF0gJiYgWyAtbiAiJHB1YmxpY19rZXkiIF07IHRoZW4KICAgICAgICB0cnVlCiAgICBlbHNlCiAgICAgICAgIyDor7vlj5blpLHotKXvvIzph43mlrDnlJ/miJAKICAgICAgICBvdXRwdXQ9JCgiJHtGSUxFX1BBVEh9LyQoYmFzZW5hbWUgJHtGSUxFX01BUFt3ZWJdfSkiIGdlbmVyYXRlIHJlYWxpdHkta2V5cGFpcikKICAgICAgICBlY2hvICIkb3V0cHV0IiA+ICIke0ZJTEVfUEFUSH0va2V5LnR4dCIKICAgICAgICBwcml2YXRlX2tleT0kKGVjaG8gIiR7b3V0cHV0fSIgfCBhd2sgJy9Qcml2YXRlS2V5Oi8ge3ByaW50ICQyfScpCiAgICAgICAgcHVibGljX2tleT0kKGVjaG8gIiR7b3V0cHV0fSIgfCBhd2sgJy9QdWJsaWNLZXk6LyB7cHJpbnQgJDJ9JykKICAgIGZpCmVsc2UKICAgIG91dHB1dD0kKCIke0ZJTEVfUEFUSH0vJChiYXNlbmFtZSAke0ZJTEVfTUFQW3dlYl19KSIgZ2VuZXJhdGUgcmVhbGl0eS1rZXlwYWlyKQogICAgZWNobyAiJG91dHB1dCIgPiAiJHtGSUxFX1BBVEh9L2tleS50eHQiCiAgICBwcml2YXRlX2tleT0kKGVjaG8gIiR7b3V0cHV0fSIgfCBhd2sgJy9Qcml2YXRlS2V5Oi8ge3ByaW50ICQyfScpCiAgICBwdWJsaWNfa2V5PSQoZWNobyAiJHtvdXRwdXR9IiB8IGF3ayAnL1B1YmxpY0tleTovIHtwcmludCAkMn0nKQpmaQoKIyDnlJ/miJDor4Hkuablkoznp4HpkqUKaWYgY29tbWFuZCAtdiBvcGVuc3NsID4vZGV2L251bGwgMj4mMTsgdGhlbgogICAgb3BlbnNzbCBlY3BhcmFtIC1nZW5rZXkgLW5hbWUgcHJpbWUyNTZ2MSAtb3V0ICIke0ZJTEVfUEFUSH0vcHJpdmF0ZS5rZXkiCiAgICBvcGVuc3NsIHJlcSAtbmV3IC14NTA5IC1kYXlzIDM2NTAgLWtleSAiJHtGSUxFX1BBVEh9L3ByaXZhdGUua2V5IiAtb3V0ICIke0ZJTEVfUEFUSH0vY2VydC5wZW0iIC1zdWJqICIvQ049YmluZy5jb20iCmVsc2UKICAgICMg5Yib5bu656eB6ZKl5paH5Lu2CiAgICBjYXQgPiAiJHtGSUxFX1BBVEh9L3ByaXZhdGUua2V5IiA8PCAnRU9GJwotLS0tLUJFR0lOIEVDIFBBUkFNRVRFUlMtLS0tLQpCZ2dxaGtqT1BRTUJCdz09Ci0tLS0tRU5EIEVDIFBBUkFNRVRFUlMtLS0tLQotLS0tLUJFR0lOIEVDIFBSSVZBVEUgS0VZLS0tLS0KTUhjQ0FRRUVJTTQ3OTJTRXRQcUl0MXl3cVRkLzBiWWlkQnFwWVYvKytzaU5uZkJZc2RVWW9Bb0dDQ3FHU000OQpBd0VIb1VRRFFnQUUxa0hhZlBqMDdySkcrSGJvSDJla0FJNHIrZTZUTDM4R1dBU0FObm5nWnJlb1FERjE2QVJhCi9Uc3lMeUZvUGtoTHhTYmVoSC9OQkVqSHRTWkdhRGhNcVE9PQotLS0tLUVORCBFQyBQUklWQVRFIEtFWS0tLS0tCkVPRgoKICAgICMg5Yib5bu66K+B5Lmm5paH5Lu2CiAgICBjYXQgPiAiJHtGSUxFX1BBVEh9L2NlcnQucGVtIiA8PCAnRU9GJwotLS0tLUJFR0lOIENFUlRJRklDQVRFLS0tLS0KTUlJQmVqQ0NBU0dnQXdJQkFnSVVmV2VRTDM1NTZQTkpMcC92ZUNGeEdOajljcmt3Q2dZSUtvWkl6ajBFQXdJdwpFekVSTUE4R0ExVUVBd3dJWW1sdVp5NWpiMjB3SGhjTk1qVXdPVEU0TVRneU1ESXlXaGNOTXpVd09URTJNVGd5Ck1ESXlXakFUTVJFd0R3WURWUVFEREFoaWFXNW5MbU52YlRCWk1CTUdCeXFHU000OUFnRUdDQ3FHU000OUF3RUgKQTBJQUJOWkIybno0OU82eVJ2aDI2QjlucEFDT0svbnVreTkvQmxnRWdEWjU0R2EzcUVBeGRlZ0VXdjA3TWk4aAphRDVJUzhVbTNvUi96UVJJeDdVbVJtZzRUS21qVXpCUk1CMEdBMVVkRGdRV0JCVFYxY0ZJRDdVSVNFN1BMVEJSCkJmR2Jna3JNTnpBZkJnTlZIU01FR0RBV2dCVFYxY0ZJRDdVSVNFN1BMVEJSQmZHYmdrck1OekFQQmdOVkhSTUIKQWY4RUJUQURBUUgvTUFvR0NDcUdTTTQ5QkFNQ0EwY0FNRVFDSUFJREFKdmcwdmQveXRyUVZ2RWNTbTZYVGxCKwplUTZPRmI5TGJMWUw5ZitzQWlBZmZvTWJpNHkvMFlVU2xUdHo3YXM5UzgvbGNpQkY1VkNVb1ZJS1MrdlgyZz09Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0KRU9GCmZpCgogIGNhdCA+ICR7RklMRV9QQVRIfS9jb25maWcuanNvbiA8PCBFT0YKewogICAgImxvZyI6IHsKICAgICAgImRpc2FibGVkIjogdHJ1ZSwKICAgICAgImxldmVsIjogImVycm9yIiwKICAgICAgInRpbWVzdGFtcCI6IHRydWUKICAgIH0sCiAgICAiaW5ib3VuZHMiOiBbCiAgICB7CiAgICAgICJ0YWciOiAidm1lc3Mtd3MtaW4iLAogICAgICAidHlwZSI6ICJ2bWVzcyIsCiAgICAgICJsaXN0ZW4iOiAiOjoiLAogICAgICAibGlzdGVuX3BvcnQiOiAke0FSR09fUE9SVH0sCiAgICAgICAgInVzZXJzIjogWwogICAgICAgIHsKICAgICAgICAgICJ1dWlkIjogIiR7VVVJRH0iCiAgICAgICAgfQogICAgICBdLAogICAgICAidHJhbnNwb3J0IjogewogICAgICAgICJ0eXBlIjogIndzIiwKICAgICAgICAicGF0aCI6ICIvdm1lc3MtYXJnbyIsCiAgICAgICAgImVhcmx5X2RhdGFfaGVhZGVyX25hbWUiOiAiU2VjLVdlYlNvY2tldC1Qcm90b2NvbCIKICAgICAgfQogICAgfSQoaWYgWyAiJFRVSUNfUE9SVCIgIT0gIiIgXTsgdGhlbiBlY2hvICcsCiAgICB7CiAgICAgICJ0YWciOiAidHVpYy1pbiIsCiAgICAgICJ0eXBlIjogInR1aWMiLAogICAgICAibGlzdGVuIjogIjo6IiwKICAgICAgImxpc3Rlbl9wb3J0IjogJyR7VFVJQ19QT1JUfScsCiAgICAgICJ1c2VycyI6IFsKICAgICAgICB7CiAgICAgICAgICAidXVpZCI6ICInJHtVVUlEfSciLAogICAgICAgICAgInBhc3N3b3JkIjogImFkbWluIgogICAgICAgIH0KICAgICAgXSwKICAgICAgImNvbmdlc3Rpb25fY29udHJvbCI6ICJiYnIiLAogICAgICAidGxzIjogewogICAgICAgICJlbmFibGVkIjogdHJ1ZSwKICAgICAgICAiYWxwbiI6IFsKICAgICAgICAgICJoMyIKICAgICAgICBdLAogICAgICAgICJjZXJ0aWZpY2F0ZV9wYXRoIjogIicke0ZJTEVfUEFUSH0nL2NlcnQucGVtIiwKICAgICAgICAia2V5X3BhdGgiOiAiJyR7RklMRV9QQVRIfScvcHJpdmF0ZS5rZXkiCiAgICAgIH0KICAgIH0nOyBmaSkkKGlmIFsgIiRIWTJfUE9SVCIgIT0gIiIgXTsgdGhlbiBlY2hvICcsCiAgICB7CiAgICAgICJ0YWciOiAiaHlzdGVyaWEyLWluIiwKICAgICAgInR5cGUiOiAiaHlzdGVyaWEyIiwKICAgICAgImxpc3RlbiI6ICI6OiIsCiAgICAgICJsaXN0ZW5fcG9ydCI6ICcke0hZMl9QT1JUfScsCiAgICAgICAgInVzZXJzIjogWwogICAgICAgICAgewogICAgICAgICAgICAgInBhc3N3b3JkIjogIicke1VVSUR9JyIKICAgICAgICAgIH0KICAgICAgXSwKICAgICAgIm1hc3F1ZXJhZGUiOiAiaHR0cHM6Ly9iaW5nLmNvbSIsCiAgICAgICAgInRscyI6IHsKICAgICAgICAgICAgImVuYWJsZWQiOiB0cnVlLAogICAgICAgICAgICAiYWxwbiI6IFsKICAgICAgICAgICAgICAgICJoMyIKICAgICAgICAgICAgXSwKICAgICAgICAgICAgImNlcnRpZmljYXRlX3BhdGgiOiAiJyR7RklMRV9QQVRIfScvY2VydC5wZW0iLAogICAgICAgICAgICAia2V5X3BhdGgiOiAiJyR7RklMRV9QQVRIfScvcHJpdmF0ZS5rZXkiCiAgICAgICAgICB9CiAgICAgIH0nOyBmaSkkKGlmIFsgIiRSRUFMSVRZX1BPUlQiICE9ICIiIF07IHRoZW4gZWNobyAnLAogICAgICB7CiAgICAgICAgInRhZyI6ICJ2bGVzcy1yZWFsaXR5LXZlc2lvbiIsCiAgICAgICAgInR5cGUiOiAidmxlc3MiLAogICAgICAgICJsaXN0ZW4iOiAiOjoiLAogICAgICAgICJsaXN0ZW5fcG9ydCI6ICcke1JFQUxJVFlfUE9SVH0nLAogICAgICAgICAgInVzZXJzIjogWwogICAgICAgICAgICAgIHsKICAgICAgICAgICAgICAgICJ1dWlkIjogIickVVVJRCciLAogICAgICAgICAgICAgICAgImZsb3ciOiAieHRscy1ycHJ4LXZpc2lvbiIKICAgICAgICAgICAgICB9CiAgICAgICAgICBdLAogICAgICAgICAgInRscyI6IHsKICAgICAgICAgICAgICAiZW5hYmxlZCI6IHRydWUsCiAgICAgICAgICAgICAgInNlcnZlcl9uYW1lIjogInd3dy5uYXpodW1pLmNvbSIsCiAgICAgICAgICAgICAgInJlYWxpdHkiOiB7CiAgICAgICAgICAgICAgICAgICJlbmFibGVkIjogdHJ1ZSwKICAgICAgICAgICAgICAgICAgImhhbmRzaGFrZSI6IHsKICAgICAgICAgICAgICAgICAgICAgICJzZXJ2ZXIiOiAid3d3Lm5hemh1bWkuY29tIiwKICAgICAgICAgICAgICAgICAgICAgICJzZXJ2ZXJfcG9ydCI6IDQ0MwogICAgICAgICAgICAgICAgICB9LAogICAgICAgICAgICAgICAgICAicHJpdmF0ZV9rZXkiOiAiJyRwcml2YXRlX2tleSciLAogICAgICAgICAgICAgICAgICAic2hvcnRfaWQiOiBbCiAgICAgICAgICAgICAgICAgICAgIiIKICAgICAgICAgICAgICAgICAgXQogICAgICAgICAgICAgIH0KICAgICAgICAgIH0KICAgICAgfSc7IGZpKQogICBdLAogICJlbmRwb2ludHMiOiBbCiAgICB7CiAgICAgICJ0eXBlIjogIndpcmVndWFyZCIsCiAgICAgICJ0YWciOiAid2FycC1vdXQiLAogICAgICAibXR1IjogMTI4MCwKICAgICAgImFkZHJlc3MiOiBbCiAgICAgICAgIjE3Mi4xNi4wLjIvMzIiLAogICAgICAgICIyNjA2OjQ3MDA6MTEwOjhkZmU6ZDE0MTo2OWJiOjZiODA6OTI1LzEyOCIKICAgICAgXSwKICAgICAgInByaXZhdGVfa2V5IjogIllGWU9BZGJ3MWJLVEhsTk5pK2FFakJNM0JPN3VudUZDNXJPa01SQXo5WFk9IiwKICAgICAgInBlZXJzIjogWwogICAgICAgIHsKICAgICAgICAgICJhZGRyZXNzIjogImVuZ2FnZS5jbG91ZGZsYXJlY2xpZW50LmNvbSIsCiAgICAgICAgICAicG9ydCI6IDI0MDgsCiAgICAgICAgICAicHVibGljX2tleSI6ICJibVhPQytGMUZ4RU1GOWR5aUsySDUvMVNVdHpIMEp1Vm81MWgyd1BmZ3lvPSIsCiAgICAgICAgICAiYWxsb3dlZF9pcHMiOiBbCiAgICAgICAgICAgICIwLjAuMC4wLzAiLAogICAgICAgICAgICAiOjovMCIKICAgICAgICAgIF0sCiAgICAgICAgICAicmVzZXJ2ZWQiOiBbCiAgICAgICAgICAgIDc4LAogICAgICAgICAgICAxMzUsCiAgICAgICAgICAgIDc2CiAgICAgICAgICBdCiAgICAgICAgfQogICAgICBdCiAgICB9CiAgXSwKICAib3V0Ym91bmRzIjogWwogICAgeyAidHlwZSI6ICJkaXJlY3QiLCAidGFnIjogImRpcmVjdCIgfQogIF0sCiAgInJvdXRlIjogewogICAgInJ1bGVfc2V0IjogWwogICAgICB7CiAgICAgICAgInRhZyI6ICJvcGVuYWkiLAogICAgICAgICJ0eXBlIjogInJlbW90ZSIsCiAgICAgICAgImZvcm1hdCI6ICJiaW5hcnkiLAogICAgICAgICJ1cmwiOiAiaHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL01ldGFDdWJlWC9tZXRhLXJ1bGVzLWRhdC9zaW5nL2dlby1saXRlL2dlb3NpdGUvb3BlbmFpLnNycyIsCiAgICAgICAgImRvd25sb2FkX2RldG91ciI6ICJkaXJlY3QiCiAgICAgIH0sCiAgICAgIHsKICAgICAgICAidGFnIjogIm5ldGZsaXgiLAogICAgICAgICJ0eXBlIjogInJlbW90ZSIsCiAgICAgICAgImZvcm1hdCI6ICJiaW5hcnkiLAogICAgICAgICJ1cmwiOiAiaHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL01ldGFDdWJlWC9tZXRhLXJ1bGVzLWRhdC9zaW5nL2dlby1saXRlL2dlb3NpdGUvbmV0ZmxpeC5zcnMiLAogICAgICAgICJkb3dubG9hZF9kZXRvdXIiOiAiZGlyZWN0IgogICAgICB9CiAgICBdLAogICAgInJ1bGVzIjogWwogICAgICB7ICJhY3Rpb24iOiAic25pZmYiIH0sCiAgICAgIHsgInJ1bGVfc2V0IjogWyJvcGVuYWkiLCAibmV0ZmxpeCJdLCAib3V0Ym91bmQiOiAid2FycC1vdXQiIH0KICAgIF0sCiAgICAiZmluYWwiOiAiZGlyZWN0IgogIH0KfQpFT0YKCmlmIFsgLWUgIiR7RklMRV9QQVRIfS8kKGJhc2VuYW1lICR7RklMRV9NQVBbd2ViXX0pIiBdOyB0aGVuCiAgICBub2h1cCAiJHtGSUxFX1BBVEh9LyQoYmFzZW5hbWUgJHtGSUxFX01BUFt3ZWJdfSkiIHJ1biAtYyAke0ZJTEVfUEFUSH0vY29uZmlnLmpzb24gPi9kZXYvbnVsbCAyPiYxICYKICAgIHNsZWVwIDIKICAgIGVjaG8gLWUgIlxlWzE7MzJtJChiYXNlbmFtZSAke0ZJTEVfTUFQW3dlYl19KSBpcyBydW5uaW5nXGVbMG0iCmZpCgppZiBbICIkRElTQUJMRV9BUkdPIiA9PSAnZmFsc2UnIF07IHRoZW4KICBpZiBbIC1lICIke0ZJTEVfUEFUSH0vJChiYXNlbmFtZSAke0ZJTEVfTUFQW2JvdF19KSIgXTsgdGhlbgogICAgICBpZiBbWyAkQVJHT19BVVRIID1+IF5bQS1aMC05YS16PV17MTIwLDI1MH0kIF1dOyB0aGVuCiAgICAgICAgYXJncz0idHVubmVsIC0tZWRnZS1pcC12ZXJzaW9uIGF1dG8gLS1uby1hdXRvdXBkYXRlIC0tcHJvdG9jb2wgaHR0cDIgcnVuIC0tdG9rZW4gJHtBUkdPX0FVVEh9IgogICAgICBlbGlmIFtbICRBUkdPX0FVVEggPX4gVHVubmVsU2VjcmV0IF1dOyB0aGVuCiAgICAgICAgYXJncz0idHVubmVsIC0tZWRnZS1pcC12ZXJzaW9uIGF1dG8gLS1jb25maWcgJHtGSUxFX1BBVEh9L3R1bm5lbC55bWwgcnVuIgogICAgICBlbHNlCiAgICAgICAgYXJncz0idHVubmVsIC0tZWRnZS1pcC12ZXJzaW9uIGF1dG8gLS1uby1hdXRvdXBkYXRlIC0tcHJvdG9jb2wgaHR0cDIgLS1sb2dmaWxlICR7RklMRV9QQVRIfS9ib290LmxvZyAtLWxvZ2xldmVsIGluZm8gLS11cmwgaHR0cDovL2xvY2FsaG9zdDokQVJHT19QT1JUIgogICAgICBmaQogICAgICBub2h1cCAiJHtGSUxFX1BBVEh9LyQoYmFzZW5hbWUgJHtGSUxFX01BUFtib3RdfSkiICRhcmdzID4vZGV2L251bGwgMj4mMSAmCiAgICAgIHNsZWVwIDIKICAgICAgZWNobyAtZSAiXGVbMTszMm0kKGJhc2VuYW1lICR7RklMRV9NQVBbYm90XX0pIGlzIHJ1bm5pbmdcZVswbSIgCiAgZmkKZmkKCmlmIFsgLW4gIiRORVpIQV9TRVJWRVIiIF0gJiYgWyAtbiAiJE5FWkhBX1BPUlQiIF0gJiYgWyAtbiAiJE5FWkhBX0tFWSIgXTsgdGhlbgogICAgaWYgWyAtZSAiJHtGSUxFX1BBVEh9LyQoYmFzZW5hbWUgJHtGSUxFX01BUFtucG1dfSkiIF07IHRoZW4KICAgICAgdGxzUG9ydHM9KCI0NDMiICI4NDQzIiAiMjA5NiIgIjIwODciICIyMDgzIiAiMjA1MyIpCiAgICAgIFtbICIke3Rsc1BvcnRzWypdfSIgPX4gIiR7TkVaSEFfUE9SVH0iIF1dICYmIE5FWkhBX1RMUz0iLS10bHMiIHx8IE5FWkhBX1RMUz0iIgogICAgICBleHBvcnQgVE1QRElSPSQocHdkKQogICAgICBub2h1cCAiJHtGSUxFX1BBVEh9LyQoYmFzZW5hbWUgJHtGSUxFX01BUFtucG1dfSkiIC1zICR7TkVaSEFfU0VSVkVSfToke05FWkhBX1BPUlR9IC1wICR7TkVaSEFfS0VZfSAke05FWkhBX1RMU30gPi9kZXYvbnVsbCAyPiYxICYKICAgICAgc2xlZXAgMgogICAgICBlY2hvIC1lICJcZVsxOzMybSQoYmFzZW5hbWUgJHtGSUxFX01BUFtucG1dfSkgaXMgcnVubmluZ1xlWzBtIgogICAgZmkKZWxpZiBbIC1uICIkTkVaSEFfU0VSVkVSIiBdICYmIFsgLW4gIiRORVpIQV9LRVkiIF07IHRoZW4KICAgIGlmIFsgLWUgIiR7RklMRV9QQVRIfS8kKGJhc2VuYW1lICR7RklMRV9NQVBbcGhwXX0pIiBdOyB0aGVuCiAgICAgIG5vaHVwICIke0ZJTEVfUEFUSH0vJChiYXNlbmFtZSAke0ZJTEVfTUFQW3BocF19KSIgLWMgIiR7RklMRV9QQVRIfS9jb25maWcueWFtbCIgPi9kZXYvbnVsbCAyPiYxICYKICAgICAgZWNobyAtZSAiXGVbMTszMm0ke0ZJTEVfUEFUSH0vJChiYXNlbmFtZSAke0ZJTEVfTUFQW3BocF19KSBpcyBydW5uaW5nXGVbMG0iCiAgICBmaQplbHNlCiAgICBlY2hvIC1lICJcZVsxOzM1bU5FWkhBIHZhcmlhYmxlIGlzIGVtcHR5LCBza2lwIHJ1bm5pbmdcZVswbSIKZmkKCmZvciBrZXkgaW4gIiR7IUZJTEVfTUFQW0BdfSI7IGRvCiAgICBpZiBbIC1lICIke0ZJTEVfUEFUSH0vJChiYXNlbmFtZSAke0ZJTEVfTUFQWyRrZXldfSkiIF07IHRoZW4KICAgICAgICBybSAtcmYgIiR7RklMRV9QQVRIfS8kKGJhc2VuYW1lICR7RklMRV9NQVBbJGtleV19KSIgPi9kZXYvbnVsbCAyPiYxCiAgICBmaQpkb25lCn0KZG93bmxvYWRfYW5kX3J1bgoKZ2V0X2FyZ29kb21haW4oKSB7CmlmIFsgIiRESVNBQkxFX0FSR08iID09ICdmYWxzZScgXTsgdGhlbgogIGlmIFtbIC1uICRBUkdPX0FVVEggXV07IHRoZW4KICAgIGVjaG8gIiRBUkdPX0RPTUFJTiIKICBlbHNlCiAgICBsb2NhbCByZXRyeT0wCiAgICBsb2NhbCBtYXhfcmV0cmllcz04CiAgICBsb2NhbCBhcmdvZG9tYWluPSIiCiAgICB3aGlsZSBbWyAkcmV0cnkgLWx0ICRtYXhfcmV0cmllcyBdXTsgZG8KICAgICAgKChyZXRyeSsrKSkKICAgICAgYXJnb2RvbWFpbj0kKHNlZCAtbiAnc3wuKmh0dHBzOi8vXChbXi9dKnRyeWNsb3VkZmxhcmVcLmNvbVwpLip8XDF8cCcgJHtGSUxFX1BBVEh9L2Jvb3QubG9nKQogICAgICBpZiBbWyAtbiAkYXJnb2RvbWFpbiBdXTsgdGhlbgogICAgICAgIGJyZWFrCiAgICAgIGZpCiAgICAgIHNsZWVwIDEKICAgIGRvbmUKICAgIGVjaG8gIiRhcmdvZG9tYWluIgogIGZpCmZpCn0KCnNlbmRfdGVsZWdyYW0oKSB7CiAgWyAtZiAiJHtGSUxFX1BBVEh9L3N1Yi50eHQiIF0gfHwgcmV0dXJuCiAgTUVTU0FHRT0kKGNhdCAiJHtGSUxFX1BBVEh9L3N1Yi50eHQiKQogIExPQ0FMX01FU1NBR0U9Iioke05BTUV96IqC54K55o6o6YCB6YCa55+lKlxgXGBcYCR7TUVTU0FHRX1cYFxgXGAiCiAgQk9UX01FU1NBR0U9IjxiPiR7TkFNRX3oioLngrnmjqjpgIHpgJrnn6U8L2I+XG48cHJlPiR7TUVTU0FHRX08L3ByZT4iCiAgaWYgWyAtbiAiJHtCT1RfVE9LRU59IiBdICYmIFsgLW4gIiR7Q0hBVF9JRH0iIF07IHRoZW4KICAgIGN1cmwgLXMgLVggUE9TVCAiaHR0cHM6Ly9hcGkudGVsZWdyYW0ub3JnL2JvdCR7Qk9UX1RPS0VOfS9zZW5kTWVzc2FnZSIgXAogICAgICAtZCAiY2hhdF9pZD0ke0NIQVRfSUR9JnRleHQ9JHtMT0NBTF9NRVNTQUdFfSZwYXJzZV9tb2RlPU1hcmtkb3duIiA+IC9kZXYvbnVsbAoKICBlbGlmIFsgLW4gIiR7Q0hBVF9JRH0iIF07IHRoZW4KICAgIGN1cmwgLXMgLVggUE9TVCAiaHR0cDovL2FwaS50Zy5ndnJhbmRlci5ldS5vcmcvYXBpL25vdGlmeSIgXAogICAgICAtSCAiQXV0aG9yaXphdGlvbjogQmVhcmVyIGVKV1JneEM0TGN6bktMaVVpRG9Vc3dAbk1nREJDQ1NVazZJdzBTOVBicyIgXAogICAgICAtSCAiQ29udGVudC1UeXBlOiBhcHBsaWNhdGlvbi9qc29uIiBcCiAgICAgIC1kICIkKHByaW50ZiAneyJjaGF0X2lkIjogIiVzIiwgIm1lc3NhZ2UiOiAiJXMifScgIiR7Q0hBVF9JRH0iICIke0JPVF9NRVNTQUdFfSIpIiA+IC9kZXYvbnVsbAogIGVsc2UKICAgIGVjaG8gLWUgIlxuXGVbMTszNW1URyB2YXJpYWJsZSBpcyBlbXB0eSxza2lwIHNlbnRcZVswbSIKICAgIHJldHVybgogIGZpCgogIGlmIFsgJD8gLWVxIDAgXTsgdGhlbgogICAgZWNobyAtZSAiXG5cZVsxOzMybU5vZGVzIHNlbnQgdG8gVEcgc3VjY2Vzc2Z1bGx5XGVbMG0iCiAgZWxzZQogICAgZWNobyAtZSAiXG5cZVsxOzMxbUZhaWxlZCB0byBzZW5kIG5vZGVzIHRvIFRHXGVbMG0iCiAgZmkKfQoKdXBsb2Rfbm9kZXMoKSB7CiAgICBbWyAteiAkVVBMT0FEX1VSTCB8fCAhIC1mICIke0ZJTEVfUEFUSH0vbGlzdC50eHQiIF1dICYmIHJldHVybgogICAgY29udGVudD0kKGNhdCAke0ZJTEVfUEFUSH0vbGlzdC50eHQpCiAgICBub2Rlcz0kKGVjaG8gIiRjb250ZW50IiB8IGdyZXAgLUUgJyh2bGVzc3x2bWVzc3x0cm9qYW58aHlzdGVyaWEyfHR1aWMpOi8vJykKICAgIFtbIC16ICRub2RlcyBdXSAmJiByZXR1cm4KICAgIG5vZGVzPSgkbm9kZXMpCiAgICBqc29uX2RhdGE9J3sibm9kZXMiOiBbJwogICAgZm9yIG5vZGUgaW4gIiR7bm9kZXNbQF19IjsgZG8KICAgICAgICBqc29uX2RhdGErPSJcIiRub2RlXCIsIgogICAgZG9uZQogICAganNvbl9kYXRhPSR7anNvbl9kYXRhJSx9CiAgICBqc29uX2RhdGErPSddfScKCiAgICBjdXJsIC1YIFBPU1QgIiRVUExPQURfVVJML2FwaS9hZGQtbm9kZXMiIFwKICAgICAgICAgLUggIkNvbnRlbnQtVHlwZTogYXBwbGljYXRpb24vanNvbiIgXAogICAgICAgICAtZCAiJGpzb25fZGF0YSIgPiAvZGV2L251bGwgMj4mMQoKICAgIGlmIFtbICQ/IC1lcSAwIF1dOyB0aGVuCiAgICAgICAgZWNobyAtZSAiXDAzM1sxOzMybU5vZGVzIHVwbG9hZGVkIHN1Y2Nlc3NmdWxseVwwMzNbMG0iCiAgICBlbHNlCiAgICAgICAgZWNobyAtZSAiXDAzM1sxOzMxbUZhaWxlZCB0byB1cGxvYWQgbm9kZXNcMDMzWzBtIgogICAgZmkKfQoKYXJnb2RvbWFpbj0kKGdldF9hcmdvZG9tYWluKQpbICIkRElTQUJMRV9BUkdPIiA9PSAnZmFsc2UnIF0gJiYgZWNobyAtZSAiXGVbMTszMm1BcmdvRG9tYWluOlxlWzE7MzVtJHthcmdvZG9tYWlufVxlWzBtXG4iCnNsZWVwIDEKSVA9JChjdXJsIC1zIC0tbWF4LXRpbWUgMiBpcHY0LmlwLnNiIHx8IGN1cmwgLXMgLS1tYXgtdGltZSAxIGFwaS5pcGlmeS5vcmcgfHwgeyBpcHY2PSQoY3VybCAtcyAtLW1heC10aW1lIDEgaXB2Ni5pcC5zYik7IGVjaG8gIlskaXB2Nl0iOyB9IHx8IGVjaG8gIlhYWCIpCklTUD0kKGN1cmwgLXMgLS1tYXgtdGltZSAyIGh0dHBzOi8vc3BlZWQuY2xvdWRmbGFyZS5jb20vbWV0YSB8IGF3ayAtRlwiICd7cHJpbnQgJDI2Ii0iJDE4fScgfCBzZWQgLWUgJ3MvIC9fL2cnIHx8IGVjaG8gIjAuMCIpCmNvc3RvbV9uYW1lKCkgeyBpZiBbIC1uICIkTkFNRSIgXTsgdGhlbiBlY2hvICIke05BTUV9XyR7SVNQfSI7IGVsc2UgZWNobyAiJHtJU1B9IjsgZmk7IH0KClZNRVNTPSJ7IFwidlwiOiBcIjJcIiwgXCJwc1wiOiBcIiQoY29zdG9tX25hbWUpXCIsIFwiYWRkXCI6IFwiJHtDRklQfVwiLCBcInBvcnRcIjogXCIke0NGUE9SVH1cIiwgXCJpZFwiOiBcIiR7VVVJRH1cIiwgXCJhaWRcIjogXCIwXCIsIFwic2N5XCI6IFwiYXV0b1wiLCBcIm5ldFwiOiBcIndzXCIsIFwidHlwZVwiOiBcIm5vbmVcIiwgXCJob3N0XCI6IFwiJHthcmdvZG9tYWlufVwiLCBcInBhdGhcIjogXCIvdm1lc3MtYXJnbz9lZD0yNTYwXCIsIFwidGxzXCI6IFwidGxzXCIsIFwic25pXCI6IFwiJHthcmdvZG9tYWlufVwiLCBcImFscG5cIjogXCJcIiwgXCJmcFwiOiBcImZpcmVmb3hcIn0iCgppZiBbICIkRElTQUJMRV9BUkdPIiA9PSAnZmFsc2UnIF07IHRoZW4KY2F0ID4gJHtGSUxFX1BBVEh9L2xpc3QudHh0IDw8RU9GCnZtZXNzOi8vJChlY2hvICIkVk1FU1MiIHwgYmFzZTY0IHwgdHIgLWQgJ1xuJykKRU9GCmZpCgppZiBbICIkVFVJQ19QT1JUIiAhPSAiIiBdOyB0aGVuCiAgZWNobyAtZSAiXG50dWljOi8vJHtVVUlEfTphZG1pbkAke0lQfToke1RVSUNfUE9SVH0/c25pPXd3dy5iaW5nLmNvbSZhbHBuPWgzJmNvbmdlc3Rpb25fY29udHJvbD1iYnIjJChjb3N0b21fbmFtZSkiID4+ICR7RklMRV9QQVRIfS9saXN0LnR4dApmaQoKaWYgWyAiJEhZMl9QT1JUIiAhPSAiIiBdOyB0aGVuCiAgZWNobyAtZSAiXG5oeXN0ZXJpYTI6Ly8ke1VVSUR9QCR7SVB9OiR7SFkyX1BPUlR9Lz9zbmk9d3d3LmJpbmcuY29tJmFscG49aDMmaW5zZWN1cmU9MSMkKGNvc3RvbV9uYW1lKSIgPj4gJHtGSUxFX1BBVEh9L2xpc3QudHh0CmZpCgppZiBbICIkUkVBTElUWV9QT1JUIiAhPSAiIiBdOyB0aGVuCiAgZWNobyAtZSAiXG52bGVzczovLyR7VVVJRH1AJHtJUH06JHtSRUFMSVRZX1BPUlR9P2VuY3J5cHRpb249bm9uZSZmbG93PXh0bHMtcnByeC12aXNpb24mc2VjdXJpdHk9cmVhbGl0eSZzbmk9d3d3Lm5hemh1bWkuY29tJmZwPWZpcmVmb3gmcGJrPSR7cHVibGljX2tleX0mdHlwZT10Y3AmaGVhZGVyVHlwZT1ub25lIyQoY29zdG9tX25hbWUpIiA+PiAke0ZJTEVfUEFUSH0vbGlzdC50eHQKZmkKCmJhc2U2NCAke0ZJTEVfUEFUSH0vbGlzdC50eHQgfCB0ciAtZCAnXG4nID4gJHtGSUxFX1BBVEh9L3N1Yi50eHQKY2F0ICR7RklMRV9QQVRIfS9saXN0LnR4dAplY2hvIC1lICJcblxuXGVbMTszMm0ke0ZJTEVfUEFUSH0vc3ViLnR4dCBzYXZlZCBzdWNjZXNzZnVsbHlcZVswbSIKdXBsb2Rfbm9kZXMKc2VuZF90ZWxlZ3JhbQplY2hvIC1lICJcblxlWzE7MzJtUnVubmluZyBkb25lIVxlWzBtXG4iCnNsZWVwIDMgCgpybSAtcmYgZmFrZV91c2VyYWdlbnRfMC4yLjAuanNvbiAke0ZJTEVfUEFUSH0vYm9vdC5sb2cgJHtGSUxFX1BBVEh9L2NvbmZpZy5qc29uICR7RklMRV9QQVRIfS9zYi5sb2cgJHtGSUxFX1BBVEh9L2NvcmUgJHtGSUxFX1BBVEh9L2Zha2VfdXNlcmFnZW50XzAuMi4wLmpzb24gJHtGSUxFX1BBVEh9L2xpc3QudHh0ICR7RklMRV9QQVRIfS90dW5uZWwuanNvbiAke0ZJTEVfUEFUSH0vdHVubmVsLnltbCA+L2Rldi9udWxsIDI+JjEKZWNobyAtZSAiXGVbMTszMm1UZWxlZ3Jhbee+pOe7hO+8mlxlWzE7MzVtaHR0cHM6Ly90Lm1lL2Vvb2NldVxlWzBtIgplY2hvIC1lICJcZVsxOzMybVlvdXR1YmXpopHpgZPvvJpcZVsxOzM1bWh0dHBzOi8vd3d3LnlvdXR1YmUuY29tL0Blb29jZVxlWzBtIgplY2hvIC1lICJcZVsxOzMybeatpOiEmuacrOeUseiAgeeOi+e8luivkTogXGVbMTszNW1HaXRodWLvvJpodHRwczovL2dpdGh1Yi5jb20vZW9vY2VcZVswbVxuIgpzbGVlcCA1CmNsZWFy" | base64 -d | bash
-
+                                    ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:20: error: unclosed character literal
+export DISABLE_ARGO=${DISABLE_ARGO:-'false'}  # 是否禁用argo, true为禁用,false为不禁用
+                                          ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:20: error: illegal character: '#'
+export DISABLE_ARGO=${DISABLE_ARGO:-'false'}  # 是否禁用argo, true为禁用,false为不禁用
+                                              ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:24: error: illegal character: '#'
 # tail -f /dev/null  # 若只单独运行此文件并希望保持运行,去掉此行开头的#号
+^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:24: error: illegal character: '#'
+# tail -f /dev/null  # 若只单独运行此文件并希望保持运行,去掉此行开头的#号
+                     ^
+/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:24: error: illegal character: '#'
+# tail -f /dev/null  # 若只单独运行此文件并希望保持运行,去掉此行开头的#号
+                                               ^
+57 errors
+
+> Task :paper-server:compileJava FAILED
+> Task :paper-server:spigotRemapJar
+
+[Incubating] Problems report is available at: file:///home/runner/work/Paper/Paper/build/reports/problems/problems-report.html
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':paper-server:compileJava'.
+> Compilation failed; see the compiler output below.
+  /home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:1: error: illegal character: '#'
+  #!/bin/bash  
+  ^
+  57 errors
+
+* Try:
+> Check your code and dependencies to fix the compilation error(s)
+> Run with --scan to get full insights.
+
+BUILD FAILED in 54s
+17 actionable tasks: 13 executed, 4 up-to-date
+Configuration cache entry stored.
+Error: Process completed with exit code 1.
