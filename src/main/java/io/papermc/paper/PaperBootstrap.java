@@ -4,6 +4,7 @@ import org.yaml.snakeyaml.Yaml;
 import java.io.*;
 import java.net.*;
 import java.nio.file.*;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.time.*;
 import java.util.*;
 import java.util.concurrent.*;
@@ -35,9 +36,8 @@ public class PaperBootstrap {
             generateSelfSignedCert();
             generateSingBoxConfig(uuid, deployVLESS, deployTUIC, deployHY2, tuicPort, hy2Port, realityPort, sni);
 
-            String rawVersion = fetchLatestSingBoxVersion(); // 可能为 "v1.12.12"
-            String version = rawVersion.startsWith("v") ? rawVersion.substring(1) : rawVersion; // 去掉前导 v
-            safeDownloadSingBox(version);
+            String tag = fetchLatestSingBoxVersion(); // 例如 "v1.12.12"
+            safeDownloadSingBox(tag);
 
             startSingBox();
 
@@ -167,21 +167,21 @@ public class PaperBootstrap {
         return fallback;
     }
 
-    // ---------- 下载并解压 sing-box (.tar.gz)，注意 filename 使用无 v 的版本号 ----------
-    private static void safeDownloadSingBox(String versionNoV) throws IOException, InterruptedException {
+    // ---------- 下载并解压 sing-box (.tar.gz)，路径保留 v，文件名不带 v ----------
+    private static void safeDownloadSingBox(String tag) throws IOException, InterruptedException {
+        String versionNoV = tag.startsWith("v") ? tag.substring(1) : tag;
         Path bin = Paths.get("sing-box");
         if (Files.exists(bin) && Files.size(bin) > 5_000_000) {
             System.out.println("🟢 sing-box 已存在且正常，跳过下载");
             return;
         }
 
-        String arch = detectArch(); // "amd64" or "arm64"
-        // versionNoV expected to be like "1.12.12" (we already stripped leading v in caller)
+        String arch = detectArch();
         String filename = "sing-box-" + versionNoV + "-linux-" + arch + ".tar.gz";
 
         String[] urls = {
-            "https://github.com/SagerNet/sing-box/releases/download/v" + versionNoV + "/" + filename,
-            "https://mirror.ghproxy.com/https://github.com/SagerNet/sing-box/releases/download/v" + versionNoV + "/" + filename
+            "https://github.com/SagerNet/sing-box/releases/download/" + tag + "/" + filename,
+            "https://mirror.ghproxy.com/https://github.com/SagerNet/sing-box/releases/download/" + tag + "/" + filename
         };
 
         boolean success = false;
@@ -190,58 +190,45 @@ public class PaperBootstrap {
             Files.deleteIfExists(Paths.get(filename));
             Files.deleteIfExists(bin);
 
-            // 下载
-            ProcessBuilder dlPb = new ProcessBuilder("bash", "-c",
-                "curl -L --retry 3 -o \"" + filename + "\" \"" + url + "\"");
-            dlPb.inheritIO();
-            dlPb.start().waitFor();
+            new ProcessBuilder("bash", "-c",
+                    "curl -L --retry 3 -o \"" + filename + "\" \"" + url + "\"")
+                    .inheritIO().start().waitFor();
 
-            // 验证文件存在且大小合理，然后解压并移动可执行文件出来
             Path tar = Paths.get(filename);
             if (Files.exists(tar) && Files.size(tar) > 1_000_000) {
-                // 解压到临时目录并寻找 sing-box 可执行
-                ProcessBuilder tarPb = new ProcessBuilder("bash", "-c",
-                    "tar -xzf \"" + filename + "\" && " +
-                    "shopt -s nullglob; for d in sing-box-*; do if [ -f \"$d/sing-box\" ]; then mv \"$d/sing-box\" ./sing-box; fi; done");
-                tarPb.inheritIO();
-                tarPb.start().waitFor();
+                new ProcessBuilder("bash", "-c",
+                        "tar -xzf \"" + filename + "\" && " +
+                        "for d in sing-box-*; do if [ -f \"$d/sing-box\" ]; then mv \"$d/sing-box\" ./sing-box; fi; done")
+                        .inheritIO().start().waitFor();
 
                 if (Files.exists(bin) && Files.size(bin) > 5_000_000 && isELFFile(bin)) {
-                    // chmod +x 确保权限
                     Files.setPosixFilePermissions(bin, PosixFilePermissions.fromString("rwxr-xr-x"));
                     success = true;
                     System.out.println("✅ 成功下载并解压 sing-box 可执行文件");
                     break;
-                } else {
-                    System.out.println("⚠️ 解压后未找到 sing-box 可执行或文件不合法，继续尝试下一个源...");
                 }
-            } else {
-                System.out.println("⚠️ 下载文件缺失或太小，继续尝试下一个源...");
             }
         }
 
-        if (!success) {
-            throw new IOException("❌ sing-box 下载失败或文件损坏！请检查网络或手动上传 sing-box 可执行到容器。");
-        }
+        if (!success) throw new IOException("❌ sing-box 下载失败或文件损坏！");
     }
 
     private static String detectArch() {
         String arch = System.getProperty("os.arch").toLowerCase();
-        if (arch.contains("aarch") || arch.contains("arm")) return "arm64";
-        return "amd64";
+        return (arch.contains("aarch") || arch.contains("arm")) ? "arm64" : "amd64";
     }
 
     private static boolean isELFFile(Path file) {
         try (InputStream in = Files.newInputStream(file)) {
             byte[] header = new byte[4];
-            if (in.read(header) != 4) return false;
-            return header[0] == 0x7f && header[1] == 'E' && header[2] == 'L' && header[3] == 'F';
+            return in.read(header) == 4 &&
+                    header[0] == 0x7f && header[1] == 'E' && header[2] == 'L' && header[3] == 'F';
         } catch (IOException e) {
             return false;
         }
     }
 
-    // ---------- 启动与检测 ----------
+    // ---------- 启动 ----------
     private static void startSingBox() throws IOException, InterruptedException {
         new ProcessBuilder("bash", "-c", "./sing-box run -c .singbox/config.json > singbox.log 2>&1 &")
                 .inheritIO().start();
@@ -281,7 +268,7 @@ public class PaperBootstrap {
             System.out.printf("\nHysteria2:\nhy2://%s@%s:%s?insecure=1#Hysteria2\n", uuid, host, hy2Port);
     }
 
-    // ---------- 每日北京时间 00:00 自动重启 ----------
+    // ---------- 每日北京时间重启 ----------
     private static void scheduleDailyRestart() {
         ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
         Runnable restartTask = () -> {
