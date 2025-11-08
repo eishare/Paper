@@ -132,9 +132,19 @@ public final class PaperBootstrap {
         Path sbDir = Paths.get(".singbox");
         Files.createDirectories(sbDir);
 
-        if (new ProcessBuilder("which", "openssl").start().waitFor() != 0)
-            throw new IOException("系统未安装 openssl，请先安装！");
+        // 检查 openssl 是否存在
+        try {
+            Process check = new ProcessBuilder("which", "openssl").start();
+            int exitCode = check.waitFor();
+            if (exitCode != 0) {
+                throw new IOException("系统未安装 openssl，请先安装！");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("检测 openssl 时被中断", e);
+        }
 
+        // Reality 密钥生成
         Path keyFile = sbDir.resolve("reality_key.txt");
         String privateKey = "";
         if (!Files.exists(keyFile)) {
@@ -154,6 +164,7 @@ public final class PaperBootstrap {
                 }
         }
 
+        // 自签证书生成
         Path cert = sbDir.resolve("cert.pem");
         Path key = sbDir.resolve("private.key");
         if (!Files.exists(cert) || !Files.exists(key)) {
