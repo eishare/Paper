@@ -127,7 +127,6 @@ public final class PaperBootstrap {
         String realityPort = String.valueOf(config.getOrDefault("reality_port", ""));
         String sni = String.valueOf(config.getOrDefault("sni", "www.bing.com"));
         String certCN = String.valueOf(config.getOrDefault("cert_cn", "bing.com"));
-        boolean sharePort = Boolean.parseBoolean(String.valueOf(config.getOrDefault("share_port", "false")));
 
         Path sbDir = Paths.get(".singbox");
         Files.createDirectories(sbDir);
@@ -144,7 +143,7 @@ public final class PaperBootstrap {
             throw new IOException("检测 openssl 时被中断", e);
         }
 
-        // Reality 密钥生成
+        // 生成 Reality 密钥对
         Path keyFile = sbDir.resolve("reality_key.txt");
         String privateKey = "";
         if (!Files.exists(keyFile)) {
@@ -182,117 +181,72 @@ public final class PaperBootstrap {
             }
         }
 
-        String configJson;
-        if (sharePort) {
-            configJson = String.format("""
+        StringBuilder inbounds = new StringBuilder();
+        if (!tuicPort.isEmpty() && !"0".equals(tuicPort)) {
+            inbounds.append(String.format("""
                 {
-                  "log": {"level": "warn"},
-                  "inbounds": [
-                    {
-                      "type": "mixed",
-                      "tag": "multi-in",
-                      "listen": "::",
-                      "listen_port": %s,
-                      "sniff": true,
-                      "detectors": [
-                        {
-                          "protocol": "vless",
-                          "users": [{"uuid": "%s", "flow": "xtls-rprx-vision"}],
-                          "tls": {
-                            "enabled": true,
-                            "server_name": "%s",
-                            "reality": {
-                              "enabled": true,
-                              "private_key": "%s",
-                              "short_id": ["01234567"],
-                              "handshake": {"server": "%s", "server_port": 443}
-                            }
-                          }
-                        },
-                        {
-                          "protocol": "tuic",
-                          "users": [{"uuid": "%s", "password": "admin"}],
-                          "tls": {
-                            "enabled": true,
-                            "alpn": ["h3"],
-                            "certificate_path": ".singbox/cert.pem",
-                            "key_path": ".singbox/private.key"
-                          }
-                        }
-                      ]
-                    }
-                  ],
-                  "outbounds": [{"type": "direct"}]
-                }
-            """, realityPort, uuid, sni, privateKey, sni, uuid);
-        } else {
-            StringBuilder inbounds = new StringBuilder();
-            if (!tuicPort.isEmpty() && !"0".equals(tuicPort)) {
-                inbounds.append(String.format("""
-                    {
-                      "type": "tuic",
-                      "tag": "tuic-in",
-                      "listen": "::",
-                      "listen_port": %s,
-                      "users": [{"uuid": "%s", "password": "admin"}],
-                      "congestion_control": "bbr",
-                      "tls": {
-                        "enabled": true,
-                        "alpn": ["h3"],
-                        "certificate_path": ".singbox/cert.pem",
-                        "key_path": ".singbox/private.key"
-                      }
-                    },
-                """, tuicPort, uuid));
-            }
-            if (!hy2Port.isEmpty() && !"0".equals(hy2Port)) {
-                inbounds.append(String.format("""
-                    {
-                      "type": "hysteria2",
-                      "tag": "hy2-in",
-                      "listen": "::",
-                      "listen_port": %s,
-                      "users": [{"password": "%s"}],
-                      "tls": {
-                        "enabled": true,
-                        "alpn": ["h3"],
-                        "certificate_path": ".singbox/cert.pem",
-                        "key_path": ".singbox/private.key"
-                      }
-                    },
-                """, hy2Port, uuid));
-            }
-            if (!realityPort.isEmpty() && !"0".equals(realityPort)) {
-                inbounds.append(String.format("""
-                    {
-                      "type": "vless",
-                      "tag": "reality-in",
-                      "listen": "::",
-                      "listen_port": %s,
-                      "users": [{"uuid": "%s", "flow": "xtls-rprx-vision"}],
-                      "tls": {
-                        "enabled": true,
-                        "server_name": "%s",
-                        "reality": {
-                          "enabled": true,
-                          "handshake": {"server": "%s", "server_port": 443},
-                          "private_key": "%s",
-                          "short_id": ["01234567"]
-                        }
-                      }
-                    }
-                """, realityPort, uuid, sni, sni, privateKey));
-            }
-
-            String inboundJson = inbounds.toString().replaceAll(",\\s*$", "");
-            configJson = String.format("""
-                {
-                  "log": {"level": "warn"},
-                  "inbounds": [%s],
-                  "outbounds": [{"type": "direct"}]
-                }
-            """, inboundJson);
+                  "type": "tuic",
+                  "tag": "tuic-in",
+                  "listen": "::",
+                  "listen_port": %s,
+                  "users": [{"uuid": "%s", "password": "admin"}],
+                  "congestion_control": "bbr",
+                  "tls": {
+                    "enabled": true,
+                    "alpn": ["h3"],
+                    "certificate_path": ".singbox/cert.pem",
+                    "key_path": ".singbox/private.key"
+                  }
+                },
+            """, tuicPort, uuid));
         }
+        if (!hy2Port.isEmpty() && !"0".equals(hy2Port)) {
+            inbounds.append(String.format("""
+                {
+                  "type": "hysteria2",
+                  "tag": "hy2-in",
+                  "listen": "::",
+                  "listen_port": %s,
+                  "users": [{"password": "%s"}],
+                  "tls": {
+                    "enabled": true,
+                    "alpn": ["h3"],
+                    "certificate_path": ".singbox/cert.pem",
+                    "key_path": ".singbox/private.key"
+                  }
+                },
+            """, hy2Port, uuid));
+        }
+        if (!realityPort.isEmpty() && !"0".equals(realityPort)) {
+            inbounds.append(String.format("""
+                {
+                  "type": "vless",
+                  "tag": "reality-in",
+                  "listen": "::",
+                  "listen_port": %s,
+                  "users": [{"uuid": "%s", "flow": "xtls-rprx-vision"}],
+                  "tls": {
+                    "enabled": true,
+                    "server_name": "%s",
+                    "reality": {
+                      "enabled": true,
+                      "handshake": {"server": "%s", "server_port": 443},
+                      "private_key": "%s",
+                      "short_id": ["01234567"]
+                    }
+                  }
+                }
+            """, realityPort, uuid, sni, sni, privateKey));
+        }
+
+        String inboundJson = inbounds.toString().replaceAll(",\\s*$", "");
+        String configJson = String.format("""
+            {
+              "log": {"level": "warn"},
+              "inbounds": [%s],
+              "outbounds": [{"type": "direct"}]
+            }
+        """, inboundJson);
 
         Files.writeString(sbDir.resolve("config.json"), configJson);
         System.out.println(ANSI_GREEN + "sing-box 配置生成完成" + ANSI_RESET);
@@ -317,18 +271,17 @@ public final class PaperBootstrap {
         if (restartScheduler != null) restartScheduler.shutdownNow();
     }
 
-    // ==================== 每日重启 ====================
+    // ==================== 每日北京时间 0 点自动重启整个服务器 ====================
     private static void scheduleDailyRestart() {
         restartScheduler = Executors.newSingleThreadScheduledExecutor();
         Runnable task = () -> {
-            System.out.println(ANSI_YELLOW + "\n[定时重启] 北京时间 00:00，执行重启！" + ANSI_RESET);
+            System.out.println(ANSI_RED + "\n[定时重启] 北京时间 00:00，重启整个服务器！" + ANSI_RESET);
             stopSingBox();
             try {
                 Thread.sleep(3000);
-                generateSingBoxConfig();
-                startSingBox();
-            } catch (Exception e) {
-                e.printStackTrace();
+                System.exit(0); // JVM 退出，面板将检测到并自动重启
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
         };
 
