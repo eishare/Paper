@@ -1,3 +1,7 @@
+rootProject.name = "Paper"
+
+include("paper-api", "paper-server")
+
 pluginManagement {
     repositories {
         gradlePluginPortal()
