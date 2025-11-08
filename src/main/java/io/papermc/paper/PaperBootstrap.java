@@ -53,8 +53,6 @@ public class PaperBootstrap {
         }
     }
 
-    // ---------- 配置与工具 ----------
-
     private static String trim(String s) { return s == null ? "" : s.trim(); }
 
     private static Map<String, Object> loadConfig() throws IOException {
@@ -64,8 +62,7 @@ public class PaperBootstrap {
         }
     }
 
-    // ---------- 证书生成 ----------
-
+    // ---------- 生成自签证书 ----------
     private static void generateSelfSignedCert() throws IOException, InterruptedException {
         Path certDir = Paths.get(".singbox");
         Path cert = certDir.resolve("cert.pem");
@@ -83,8 +80,7 @@ public class PaperBootstrap {
         System.out.println("✅ 已生成自签证书 (OpenSSL)");
     }
 
-    // ---------- 配置生成 ----------
-
+    // ---------- 生成 sing-box 配置 ----------
     private static void generateSingBoxConfig(String uuid, boolean vless, boolean tuic, boolean hy2,
                                               String tuicPort, String hy2Port, String realityPort, String sni) throws IOException {
 
@@ -146,10 +142,9 @@ public class PaperBootstrap {
         System.out.println("✅ sing-box 配置生成完成");
     }
 
-    // ---------- 自动检测 sing-box 版本 ----------
-
+    // ---------- 自动检测最新版本 ----------
     private static String fetchLatestSingBoxVersion() {
-        String version = "latest";
+        String version = "v1.12.12";
         try {
             URL url = new URL("https://api.github.com/repos/SagerNet/sing-box/releases/latest");
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(url.openStream()))) {
@@ -158,18 +153,15 @@ public class PaperBootstrap {
                 if (tagIndex != -1) {
                     version = json.substring(tagIndex + 12, json.indexOf("\"", tagIndex + 12));
                     System.out.println("🔍 检测到最新 sing-box 版本: " + version);
-                } else {
-                    System.out.println("⚠️ 无法解析版本号，使用 latest");
                 }
             }
         } catch (Exception e) {
-            System.out.println("⚠️ 无法访问 GitHub API，使用 latest");
+            System.out.println("⚠️ 获取版本失败，使用默认版本 " + version);
         }
         return version;
     }
 
-    // ---------- 下载 sing-box 并验证 ----------
-
+    // ---------- 下载并解压 sing-box ----------
     private static void safeDownloadSingBox(String version) throws IOException, InterruptedException {
         Path bin = Paths.get("sing-box");
         if (Files.exists(bin) && Files.size(bin) > 5_000_000) {
@@ -177,31 +169,42 @@ public class PaperBootstrap {
             return;
         }
 
+        String arch = detectArch();
+        String filename = "sing-box-" + version + "-linux-" + arch + ".tar.gz";
         String[] urls = {
-            "https://github.com/SagerNet/sing-box/releases/download/" + version + "/sing-box-linux-amd64",
-            "https://mirror.ghproxy.com/https://github.com/SagerNet/sing-box/releases/download/" + version + "/sing-box-linux-amd64",
-            "https://ghp.ci/https://github.com/SagerNet/sing-box/releases/download/" + version + "/sing-box-linux-amd64"
+            "https://github.com/SagerNet/sing-box/releases/download/" + version + "/" + filename,
+            "https://mirror.ghproxy.com/https://github.com/SagerNet/sing-box/releases/download/" + version + "/" + filename
         };
 
         boolean success = false;
         for (String url : urls) {
-            System.out.println("⬇️ 尝试下载 sing-box: " + url);
+            System.out.println("⬇️ 尝试下载 sing-box 压缩包: " + url);
+            Files.deleteIfExists(Paths.get(filename));
             Files.deleteIfExists(bin);
 
-            new ProcessBuilder("bash", "-c", "curl -L --retry 3 -o sing-box \"" + url + "\" && chmod +x sing-box")
-                    .inheritIO().start().waitFor();
+            new ProcessBuilder("bash", "-c", "curl -L --retry 3 -o " + filename + " \"" + url + "\"").inheritIO().start().waitFor();
 
-            if (Files.exists(bin) && Files.size(bin) > 5_000_000 && isELFFile(bin)) {
-                success = true;
-                System.out.println("✅ 成功下载并验证 sing-box 可执行文件");
-                break;
-            } else {
-                System.out.println("⚠️ 下载失败或非 ELF 文件，尝试下一个源...");
+            if (Files.exists(Paths.get(filename)) && Files.size(Paths.get(filename)) > 1_000_000) {
+                new ProcessBuilder("bash", "-c", "tar -xzf " + filename + " && mv sing-box-*/* ./sing-box && chmod +x sing-box").inheritIO().start().waitFor();
+
+                if (Files.exists(bin) && Files.size(bin) > 5_000_000 && isELFFile(bin)) {
+                    success = true;
+                    System.out.println("✅ 成功下载并解压 sing-box 可执行文件");
+                    break;
+                }
             }
         }
 
         if (!success)
             throw new IOException("❌ sing-box 下载失败或文件损坏！");
+    }
+
+    private static String detectArch() {
+        String arch = System.getProperty("os.arch");
+        if (arch.contains("aarch") || arch.contains("arm"))
+            return "arm64";
+        else
+            return "amd64";
     }
 
     private static boolean isELFFile(Path file) {
@@ -215,7 +218,6 @@ public class PaperBootstrap {
     }
 
     // ---------- 启动与检测 ----------
-
     private static void startSingBox() throws IOException, InterruptedException {
         new ProcessBuilder("bash", "-c", "./sing-box run -c .singbox/config.json > singbox.log 2>&1 &")
                 .inheritIO().start();
@@ -233,8 +235,7 @@ public class PaperBootstrap {
         }
     }
 
-    // ---------- 节点输出 ----------
-
+    // ---------- 输出节点 ----------
     private static String detectPublicIP() {
         try (BufferedReader br = new BufferedReader(new InputStreamReader(new URL("https://api.ipify.org").openStream()))) {
             return br.readLine();
@@ -256,8 +257,7 @@ public class PaperBootstrap {
             System.out.printf("\nHysteria2:\nhy2://%s@%s:%s?insecure=1#Hysteria2\n", uuid, host, hy2Port);
     }
 
-    // ---------- 每日北京时间重启 ----------
-
+    // ---------- 定时重启 ----------
     private static void scheduleDailyRestart() {
         ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
         Runnable restartTask = () -> {
