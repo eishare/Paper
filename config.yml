@@ -1,8 +1,6 @@
-# ===== 配置 UUID 和各节点端口 =====
-uuid: ""                   # 替换为你的 UUID
-tuic_port: ""              # TUIC UDP 节点端口
-hy2_port: ""               # Hysteria2 节点端口
-reality_port: ""           # VLESS Reality 节点端口
-
-# ===== 可选设置 =====
-sni: "www.bing.com"            # Reality 或 TUIC 节点 SNI，可根据需求修改
+# config.yml —— 所有配置集中于此
+uuid: ""                       #输入uuid
+tuic_port: ""                  #输入端口=确认部署
+hy2_port: ""                   #输入端口=确认部署
+reality_port: ""               #输入端口=确认部署
+sni: "www.bing.com"
