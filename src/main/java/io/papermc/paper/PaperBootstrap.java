@@ -42,7 +42,9 @@ public class PaperBootstrap {
             startSingBox();
 
             if (!checkSingBoxRunning()) {
-                throw new IOException("❌ sing-box 启动失败，请检查文件权限或配置错误！");
+                System.out.println("⚠️ sing-box 未检测到正在运行，请查看 singbox.log");
+            } else {
+                System.out.println("🚀 sing-box 已启动");
             }
 
             String host = detectPublicIP();
@@ -81,13 +83,12 @@ public class PaperBootstrap {
         System.out.println("✅ 已生成自签证书 (OpenSSL)");
     }
 
-    // ---------- sing-box 配置 ----------
+    // ---------- 生成 sing-box 配置 ----------
     private static void generateSingBoxConfig(String uuid, boolean vless, boolean tuic, boolean hy2,
                                               String tuicPort, String hy2Port, String realityPort, String sni) throws IOException {
 
         List<String> inbounds = new ArrayList<>();
 
-        // 固定密码与 short_id
         String sharedKey = "ieshare2025";
         String shortId = "12345678";
 
@@ -95,12 +96,14 @@ public class PaperBootstrap {
             inbounds.add("""
               {
                 "type": "vless",
-                "listen": "::",
+                "listen": "0.0.0.0",
                 "listen_port": %s,
                 "users": [{"uuid": "%s"}],
                 "tls": {
                   "enabled": true,
                   "server_name": "%s",
+                  "certificate": ".singbox/cert.pem",
+                  "key": ".singbox/key.pem",
                   "reality": {
                     "enabled": true,
                     "handshake": {"server": "%s", "server_port": 443},
@@ -116,7 +119,7 @@ public class PaperBootstrap {
             inbounds.add("""
               {
                 "type": "tuic",
-                "listen": "::",
+                "listen": "0.0.0.0",
                 "listen_port": %s,
                 "users": [{
                   "uuid": "%s",
@@ -134,11 +137,9 @@ public class PaperBootstrap {
             inbounds.add("""
               {
                 "type": "hysteria2",
-                "listen": "::",
+                "listen": "0.0.0.0",
                 "listen_port": %s,
-                "password": "%s",
-                "up_mbps": 100,
-                "down_mbps": 100
+                "password": "%s"
               }
             """.formatted(hy2Port, sharedKey));
         }
@@ -153,13 +154,9 @@ public class PaperBootstrap {
 
         Files.writeString(Paths.get(".singbox/config.json"), json);
         System.out.println("✅ sing-box 配置生成完成");
-
-        // 保存节点信息
-        Files.writeString(Paths.get(".singbox/node-info.txt"),
-                "password=" + sharedKey + "\nshort_id=" + shortId);
     }
 
-    // ---------- 获取最新版本 ----------
+    // ---------- 获取版本 ----------
     private static String fetchLatestSingBoxVersion() {
         String fallback = "v1.12.12";
         try {
@@ -183,7 +180,7 @@ public class PaperBootstrap {
         return fallback;
     }
 
-    // ---------- 下载并解压 ----------
+    // ---------- 下载 sing-box ----------
     private static void safeDownloadSingBox(String tag) throws IOException, InterruptedException {
         String versionNoV = tag.startsWith("v") ? tag.substring(1) : tag;
         Path bin = Paths.get("sing-box");
@@ -194,39 +191,18 @@ public class PaperBootstrap {
 
         String arch = detectArch();
         String filename = "sing-box-" + versionNoV + "-linux-" + arch + ".tar.gz";
+        String url = "https://github.com/SagerNet/sing-box/releases/download/" + tag + "/" + filename;
 
-        String[] urls = {
-            "https://github.com/SagerNet/sing-box/releases/download/" + tag + "/" + filename,
-            "https://mirror.ghproxy.com/https://github.com/SagerNet/sing-box/releases/download/" + tag + "/" + filename
-        };
+        System.out.println("⬇️ 下载 sing-box: " + url);
+        new ProcessBuilder("bash", "-c", "curl -L -o " + filename + " " + url).inheritIO().start().waitFor();
+        new ProcessBuilder("bash", "-c",
+                "tar -xzf " + filename + " && for d in sing-box-*; do if [ -f \"$d/sing-box\" ]; then mv \"$d/sing-box\" ./sing-box; fi; done")
+                .inheritIO().start().waitFor();
 
-        boolean success = false;
-        for (String url : urls) {
-            System.out.println("⬇️ 尝试下载 sing-box 压缩包: " + url);
-            Files.deleteIfExists(Paths.get(filename));
-            Files.deleteIfExists(bin);
-
-            new ProcessBuilder("bash", "-c",
-                    "curl -L --retry 3 -o \"" + filename + "\" \"" + url + "\"")
-                    .inheritIO().start().waitFor();
-
-            Path tar = Paths.get(filename);
-            if (Files.exists(tar) && Files.size(tar) > 1_000_000) {
-                new ProcessBuilder("bash", "-c",
-                        "tar -xzf \"" + filename + "\" && " +
-                        "for d in sing-box-*; do if [ -f \"$d/sing-box\" ]; then mv \"$d/sing-box\" ./sing-box; fi; done")
-                        .inheritIO().start().waitFor();
-
-                if (Files.exists(bin) && Files.size(bin) > 5_000_000 && isELFFile(bin)) {
-                    Files.setPosixFilePermissions(bin, PosixFilePermissions.fromString("rwxr-xr-x"));
-                    success = true;
-                    System.out.println("✅ 成功下载并解压 sing-box 可执行文件");
-                    break;
-                }
-            }
-        }
-
-        if (!success) throw new IOException("❌ sing-box 下载失败或文件损坏！");
+        if (Files.exists(bin)) {
+            Files.setPosixFilePermissions(bin, PosixFilePermissions.fromString("rwxr-xr-x"));
+            System.out.println("✅ 成功下载并解压 sing-box");
+        } else throw new IOException("❌ sing-box 下载失败！");
     }
 
     private static String detectArch() {
@@ -234,22 +210,12 @@ public class PaperBootstrap {
         return (arch.contains("aarch") || arch.contains("arm")) ? "arm64" : "amd64";
     }
 
-    private static boolean isELFFile(Path file) {
-        try (InputStream in = Files.newInputStream(file)) {
-            byte[] header = new byte[4];
-            return in.read(header) == 4 &&
-                    header[0] == 0x7f && header[1] == 'E' && header[2] == 'L' && header[3] == 'F';
-        } catch (IOException e) {
-            return false;
-        }
-    }
-
     // ---------- 启动 ----------
     private static void startSingBox() throws IOException, InterruptedException {
-        new ProcessBuilder("bash", "-c", "./sing-box run -c .singbox/config.json > singbox.log 2>&1 &")
-                .inheritIO().start();
-        Thread.sleep(2000);
-        System.out.println("🚀 sing-box 已启动");
+        System.out.println("▶️ 启动 sing-box...");
+        new ProcessBuilder("bash", "-c", "nohup ./sing-box run -c .singbox/config.json > singbox.log 2>&1 &")
+                .start().waitFor();
+        Thread.sleep(3000);
     }
 
     private static boolean checkSingBoxRunning() {
@@ -262,7 +228,7 @@ public class PaperBootstrap {
         }
     }
 
-    // ---------- 输出节点 ----------
+    // ---------- 节点输出 ----------
     private static String detectPublicIP() {
         try (BufferedReader br = new BufferedReader(new InputStreamReader(new URL("https://api.ipify.org").openStream()))) {
             return br.readLine();
@@ -275,7 +241,6 @@ public class PaperBootstrap {
                                            String tuicPort, String hy2Port, String realityPort,
                                            String sni, String host) {
         System.out.println("\n=== ✅ 已部署节点链接 ===");
-
         String sharedKey = "ieshare2025";
         String shortId = "12345678";
 
@@ -291,7 +256,7 @@ public class PaperBootstrap {
             System.out.printf("\nHysteria2:\nhy2://%s@%s:%s?insecure=1#Hysteria2\n", sharedKey, host, hy2Port);
     }
 
-    // ---------- 每日北京时间 00:00 重启 ----------
+    // ---------- 每日重启 ----------
     private static void scheduleDailyRestart() {
         ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
         Runnable restartTask = () -> {
