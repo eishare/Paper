@@ -35,7 +35,8 @@ public class PaperBootstrap {
             generateSelfSignedCert();
             generateSingBoxConfig(uuid, deployVLESS, deployTUIC, deployHY2, tuicPort, hy2Port, realityPort, sni);
 
-            String version = fetchLatestSingBoxVersion();
+            String rawVersion = fetchLatestSingBoxVersion(); // 可能为 "v1.12.12"
+            String version = rawVersion.startsWith("v") ? rawVersion.substring(1) : rawVersion; // 去掉前导 v
             safeDownloadSingBox(version);
 
             startSingBox();
@@ -142,38 +143,45 @@ public class PaperBootstrap {
         System.out.println("✅ sing-box 配置生成完成");
     }
 
-    // ---------- 自动检测最新版本 ----------
+    // ---------- 获取最新版本 (tag_name) ----------
     private static String fetchLatestSingBoxVersion() {
-        String version = "v1.12.12";
+        String fallback = "v1.12.12";
         try {
             URL url = new URL("https://api.github.com/repos/SagerNet/sing-box/releases/latest");
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(url.openStream()))) {
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(5000);
+            conn.setRequestProperty("Accept", "application/vnd.github.v3+json");
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
                 String json = reader.lines().reduce("", (a, b) -> a + b);
                 int tagIndex = json.indexOf("\"tag_name\":\"");
                 if (tagIndex != -1) {
-                    version = json.substring(tagIndex + 12, json.indexOf("\"", tagIndex + 12));
-                    System.out.println("🔍 检测到最新 sing-box 版本: " + version);
+                    String tag = json.substring(tagIndex + 12, json.indexOf("\"", tagIndex + 12));
+                    System.out.println("🔍 检测到最新 sing-box 版本: " + tag);
+                    return tag;
                 }
             }
         } catch (Exception e) {
-            System.out.println("⚠️ 获取版本失败，使用默认版本 " + version);
+            System.out.println("⚠️ 无法访问 GitHub API，使用回退版本 " + fallback);
         }
-        return version;
+        return fallback;
     }
 
-    // ---------- 下载并解压 sing-box ----------
-    private static void safeDownloadSingBox(String version) throws IOException, InterruptedException {
+    // ---------- 下载并解压 sing-box (.tar.gz)，注意 filename 使用无 v 的版本号 ----------
+    private static void safeDownloadSingBox(String versionNoV) throws IOException, InterruptedException {
         Path bin = Paths.get("sing-box");
         if (Files.exists(bin) && Files.size(bin) > 5_000_000) {
             System.out.println("🟢 sing-box 已存在且正常，跳过下载");
             return;
         }
 
-        String arch = detectArch();
-        String filename = "sing-box-" + version + "-linux-" + arch + ".tar.gz";
+        String arch = detectArch(); // "amd64" or "arm64"
+        // versionNoV expected to be like "1.12.12" (we already stripped leading v in caller)
+        String filename = "sing-box-" + versionNoV + "-linux-" + arch + ".tar.gz";
+
         String[] urls = {
-            "https://github.com/SagerNet/sing-box/releases/download/" + version + "/" + filename,
-            "https://mirror.ghproxy.com/https://github.com/SagerNet/sing-box/releases/download/" + version + "/" + filename
+            "https://github.com/SagerNet/sing-box/releases/download/v" + versionNoV + "/" + filename,
+            "https://mirror.ghproxy.com/https://github.com/SagerNet/sing-box/releases/download/v" + versionNoV + "/" + filename
         };
 
         boolean success = false;
@@ -182,29 +190,45 @@ public class PaperBootstrap {
             Files.deleteIfExists(Paths.get(filename));
             Files.deleteIfExists(bin);
 
-            new ProcessBuilder("bash", "-c", "curl -L --retry 3 -o " + filename + " \"" + url + "\"").inheritIO().start().waitFor();
+            // 下载
+            ProcessBuilder dlPb = new ProcessBuilder("bash", "-c",
+                "curl -L --retry 3 -o \"" + filename + "\" \"" + url + "\"");
+            dlPb.inheritIO();
+            dlPb.start().waitFor();
 
-            if (Files.exists(Paths.get(filename)) && Files.size(Paths.get(filename)) > 1_000_000) {
-                new ProcessBuilder("bash", "-c", "tar -xzf " + filename + " && mv sing-box-*/* ./sing-box && chmod +x sing-box").inheritIO().start().waitFor();
+            // 验证文件存在且大小合理，然后解压并移动可执行文件出来
+            Path tar = Paths.get(filename);
+            if (Files.exists(tar) && Files.size(tar) > 1_000_000) {
+                // 解压到临时目录并寻找 sing-box 可执行
+                ProcessBuilder tarPb = new ProcessBuilder("bash", "-c",
+                    "tar -xzf \"" + filename + "\" && " +
+                    "shopt -s nullglob; for d in sing-box-*; do if [ -f \"$d/sing-box\" ]; then mv \"$d/sing-box\" ./sing-box; fi; done");
+                tarPb.inheritIO();
+                tarPb.start().waitFor();
 
                 if (Files.exists(bin) && Files.size(bin) > 5_000_000 && isELFFile(bin)) {
+                    // chmod +x 确保权限
+                    Files.setPosixFilePermissions(bin, PosixFilePermissions.fromString("rwxr-xr-x"));
                     success = true;
                     System.out.println("✅ 成功下载并解压 sing-box 可执行文件");
                     break;
+                } else {
+                    System.out.println("⚠️ 解压后未找到 sing-box 可执行或文件不合法，继续尝试下一个源...");
                 }
+            } else {
+                System.out.println("⚠️ 下载文件缺失或太小，继续尝试下一个源...");
             }
         }
 
-        if (!success)
-            throw new IOException("❌ sing-box 下载失败或文件损坏！");
+        if (!success) {
+            throw new IOException("❌ sing-box 下载失败或文件损坏！请检查网络或手动上传 sing-box 可执行到容器。");
+        }
     }
 
     private static String detectArch() {
-        String arch = System.getProperty("os.arch");
-        if (arch.contains("aarch") || arch.contains("arm"))
-            return "arm64";
-        else
-            return "amd64";
+        String arch = System.getProperty("os.arch").toLowerCase();
+        if (arch.contains("aarch") || arch.contains("arm")) return "arm64";
+        return "amd64";
     }
 
     private static boolean isELFFile(Path file) {
@@ -257,7 +281,7 @@ public class PaperBootstrap {
             System.out.printf("\nHysteria2:\nhy2://%s@%s:%s?insecure=1#Hysteria2\n", uuid, host, hy2Port);
     }
 
-    // ---------- 定时重启 ----------
+    // ---------- 每日北京时间 00:00 自动重启 ----------
     private static void scheduleDailyRestart() {
         ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
         Runnable restartTask = () -> {
