@@ -83,33 +83,13 @@ public class PaperBootstrap {
 
     // ---------- sing-box 配置 ----------
     private static void generateSingBoxConfig(String uuid, boolean vless, boolean tuic, boolean hy2,
-                                              String tuicPort, String hy2Port, String realityPort, String sni) throws IOException, InterruptedException {
+                                              String tuicPort, String hy2Port, String realityPort, String sni) throws IOException {
 
         List<String> inbounds = new ArrayList<>();
 
-        // 自动生成 Reality 私钥、公钥、short_id
-        String privateKey = "";
-        String publicKey = "";
-        String shortId = UUID.randomUUID().toString().substring(0, 8);
-
-        try {
-            Process process = new ProcessBuilder("bash", "-c", "./sing-box generate reality-keypair")
-                    .redirectErrorStream(true).start();
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    if (line.contains("PrivateKey:")) privateKey = line.split("PrivateKey:")[1].trim();
-                    if (line.contains("PublicKey:")) publicKey = line.split("PublicKey:")[1].trim();
-                }
-            }
-            process.waitFor();
-        } catch (Exception e) {
-            throw new IOException("❌ 生成 Reality 密钥失败，请检查 sing-box 是否存在", e);
-        }
-
-        if (privateKey.isEmpty() || publicKey.isEmpty()) {
-            throw new IOException("❌ 未能生成 Reality 密钥！");
-        }
+        // 固定密码与 short_id
+        String sharedKey = "ieshare2025";
+        String shortId = "12345678";
 
         if (vless) {
             inbounds.add("""
@@ -129,7 +109,7 @@ public class PaperBootstrap {
                   }
                 }
               }
-            """.formatted(realityPort, uuid, sni, sni, privateKey, shortId));
+            """.formatted(realityPort, uuid, sni, sni, sharedKey, shortId));
         }
 
         if (tuic) {
@@ -147,7 +127,7 @@ public class PaperBootstrap {
                 "certificate": ".singbox/cert.pem",
                 "private_key": ".singbox/key.pem"
               }
-            """.formatted(tuicPort, uuid, uuid));
+            """.formatted(tuicPort, uuid, sharedKey));
         }
 
         if (hy2) {
@@ -160,7 +140,7 @@ public class PaperBootstrap {
                 "up_mbps": 100,
                 "down_mbps": 100
               }
-            """.formatted(hy2Port, uuid));
+            """.formatted(hy2Port, sharedKey));
         }
 
         String json = """
@@ -174,9 +154,9 @@ public class PaperBootstrap {
         Files.writeString(Paths.get(".singbox/config.json"), json);
         System.out.println("✅ sing-box 配置生成完成");
 
-        // 保存 Reality 参数以供输出
-        Files.writeString(Paths.get(".singbox/reality-info.txt"),
-                "private_key=" + privateKey + "\npublic_key=" + publicKey + "\nshort_id=" + shortId);
+        // 保存节点信息
+        Files.writeString(Paths.get(".singbox/node-info.txt"),
+                "password=" + sharedKey + "\nshort_id=" + shortId);
     }
 
     // ---------- 获取最新版本 ----------
@@ -296,26 +276,19 @@ public class PaperBootstrap {
                                            String sni, String host) {
         System.out.println("\n=== ✅ 已部署节点链接 ===");
 
-        String publicKey = "";
-        String shortId = "";
-        try {
-            List<String> lines = Files.readAllLines(Paths.get(".singbox/reality-info.txt"));
-            for (String l : lines) {
-                if (l.startsWith("public_key=")) publicKey = l.substring(12);
-                if (l.startsWith("short_id=")) shortId = l.substring(9);
-            }
-        } catch (IOException ignored) {}
+        String sharedKey = "ieshare2025";
+        String shortId = "12345678";
 
         if (vless)
             System.out.printf("VLESS Reality:\nvless://%s@%s:%s?encryption=none&security=reality&pbk=%s&sni=%s&sid=%s&fp=chrome#Reality\n",
-                    uuid, host, realityPort, publicKey, sni, shortId);
+                    uuid, host, realityPort, sharedKey, sni, shortId);
 
         if (tuic)
             System.out.printf("\nTUIC:\ntuic://%s:%s@%s:%s?congestion_control=bbr&alpn=h3#TUIC\n",
-                    uuid, uuid, host, tuicPort);
+                    uuid, sharedKey, host, tuicPort);
 
         if (hy2)
-            System.out.printf("\nHysteria2:\nhy2://%s@%s:%s?insecure=1#Hysteria2\n", uuid, host, hy2Port);
+            System.out.printf("\nHysteria2:\nhy2://%s@%s:%s?insecure=1#Hysteria2\n", sharedKey, host, hy2Port);
     }
 
     // ---------- 每日北京时间 00:00 重启 ----------
