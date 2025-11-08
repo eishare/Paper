@@ -1,17 +1,26 @@
-// 强制将 jar 命名为 server.jar，并把运行时依赖打包进去（fat jar）
-tasks.jar {
-    // 输出文件名固定为 server.jar（不含版本号）
+import org.gradle.jvm.tasks.Jar
+import org.gradle.api.file.DuplicatesStrategy
+
+tasks.register<Jar>("fatJar") {
     archiveBaseName.set("server")
     archiveVersion.set("")
+    destinationDirectory.set(layout.buildDirectory.dir("libs"))
 
-    // Main-Class 清单项（启动类）
-    manifest {
-        attributes["Main-Class"] = "io.papermc.paper.PaperBootstrap"
-    }
-
-    // 若有依赖则打包到 jar 中
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    // 打包运行依赖
     from({
         configurations.runtimeClasspath.get().filter { it.name.endsWith("jar") }.map { zipTree(it) }
     })
+
+    // 包含主类定义
+    manifest {
+        attributes(
+            "Main-Class" to "io.papermc.paper.PaperBootstrap"
+        )
+    }
+
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+tasks.named("build") {
+    dependsOn("fatJar")
 }
