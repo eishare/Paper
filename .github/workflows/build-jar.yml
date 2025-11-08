@@ -25,7 +25,7 @@ jobs:
       - name: Build fat server.jar
         run: ./gradlew clean jar --no-daemon
 
-      - name: Debug: list files
+      - name: Debug: list build/libs
         run: ls -lh build/libs || true
 
       - name: Upload server.jar to Actions
