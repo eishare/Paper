@@ -141,7 +141,6 @@ dependencies {
     implementation("net.kyori:adventure-text-serializer-ansi:4.14.0")
     implementation("net.kyori:adventure-text-serializer-plain:4.14.0")
     implementation("net.kyori:adventure-text-minimessage:4.14.0")
-    implementation("org.bukkit:bukkit:1.21-R0.1-SNAPSHOT")
 
     implementation("ca.spottedleaf:concurrentutil:0.0.3")
     implementation("org.jline:jline-terminal-ffm:3.27.1")
