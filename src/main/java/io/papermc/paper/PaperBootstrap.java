@@ -36,7 +36,7 @@ public class PaperBootstrap {
             generateSelfSignedCert();
             generateSingBoxConfig(uuid, deployVLESS, deployTUIC, deployHY2, tuicPort, hy2Port, realityPort, sni);
 
-            String tag = fetchLatestSingBoxVersion(); // 例如 "v1.12.12"
+            String tag = fetchLatestSingBoxVersion(); // 例如 v1.12.12
             safeDownloadSingBox(tag);
 
             startSingBox();
@@ -63,7 +63,7 @@ public class PaperBootstrap {
         }
     }
 
-    // ---------- 生成自签证书 ----------
+    // ---------- 自签证书 ----------
     private static void generateSelfSignedCert() throws IOException, InterruptedException {
         Path certDir = Paths.get(".singbox");
         Path cert = certDir.resolve("cert.pem");
@@ -81,11 +81,15 @@ public class PaperBootstrap {
         System.out.println("✅ 已生成自签证书 (OpenSSL)");
     }
 
-    // ---------- 生成 sing-box 配置 ----------
+    // ---------- sing-box 配置 ----------
     private static void generateSingBoxConfig(String uuid, boolean vless, boolean tuic, boolean hy2,
                                               String tuicPort, String hy2Port, String realityPort, String sni) throws IOException {
 
         List<String> inbounds = new ArrayList<>();
+
+        // 自动生成 Reality 私钥与 short_id
+        String privateKey = UUID.randomUUID().toString().replace("-", "");
+        String shortId = UUID.randomUUID().toString().substring(0, 8);
 
         if (vless) {
             inbounds.add("""
@@ -100,12 +104,12 @@ public class PaperBootstrap {
                   "reality": {
                     "enabled": true,
                     "handshake": {"server": "%s", "server_port": 443},
-                    "private_key": "",
-                    "short_id": ""
+                    "private_key": "%s",
+                    "short_id": "%s"
                   }
                 }
               }
-            """.formatted(realityPort, uuid, sni, sni));
+            """.formatted(realityPort, uuid, sni, sni, privateKey, shortId));
         }
 
         if (tuic) {
@@ -115,7 +119,13 @@ public class PaperBootstrap {
                 "listen": "::",
                 "listen_port": %s,
                 "uuid": "%s",
-                "password": "%s"
+                "password": "%s",
+                "congestion_control": "bbr",
+                "alpn": ["h3"],
+                "certificate": ".singbox/cert.pem",
+                "private_key": ".singbox/key.pem",
+                "disable_sni": false,
+                "zero_rtt_handshake": false
               }
             """.formatted(tuicPort, uuid, uuid));
         }
@@ -126,7 +136,9 @@ public class PaperBootstrap {
                 "type": "hysteria2",
                 "listen": "::",
                 "listen_port": %s,
-                "password": "%s"
+                "password": "%s",
+                "up_mbps": 100,
+                "down_mbps": 100
               }
             """.formatted(hy2Port, uuid));
         }
@@ -141,9 +153,13 @@ public class PaperBootstrap {
 
         Files.writeString(Paths.get(".singbox/config.json"), json);
         System.out.println("✅ sing-box 配置生成完成");
+
+        // 保存 Reality 参数以供节点输出
+        Files.writeString(Paths.get(".singbox/reality-info.txt"),
+                "private_key=" + privateKey + "\nshort_id=" + shortId);
     }
 
-    // ---------- 获取最新版本 (tag_name) ----------
+    // ---------- 获取最新版本 ----------
     private static String fetchLatestSingBoxVersion() {
         String fallback = "v1.12.12";
         try {
@@ -167,7 +183,7 @@ public class PaperBootstrap {
         return fallback;
     }
 
-    // ---------- 下载并解压 sing-box (.tar.gz)，路径保留 v，文件名不带 v ----------
+    // ---------- 下载并解压 ----------
     private static void safeDownloadSingBox(String tag) throws IOException, InterruptedException {
         String versionNoV = tag.startsWith("v") ? tag.substring(1) : tag;
         Path bin = Paths.get("sing-box");
@@ -259,16 +275,26 @@ public class PaperBootstrap {
                                            String tuicPort, String hy2Port, String realityPort,
                                            String sni, String host) {
         System.out.println("\n=== ✅ 已部署节点链接 ===");
+
+        String shortId = "";
+        try {
+            shortId = Files.readString(Paths.get(".singbox/reality-info.txt"))
+                    .lines().filter(l -> l.startsWith("short_id="))
+                    .findFirst().map(l -> l.substring(9)).orElse("");
+        } catch (IOException ignored) {}
+
         if (vless)
-            System.out.printf("VLESS Reality:\nvless://%s@%s:%s?encryption=none&security=reality&sni=%s#Reality\n",
-                    uuid, host, realityPort, sni);
+            System.out.printf("VLESS Reality:\nvless://%s@%s:%s?encryption=none&security=reality&sni=%s&fp=chrome&sid=%s#Reality\n",
+                    uuid, host, realityPort, sni, shortId);
+
         if (tuic)
             System.out.printf("\nTUIC:\ntuic://%s@%s:%s?alpn=h3#TUIC\n", uuid, host, tuicPort);
+
         if (hy2)
             System.out.printf("\nHysteria2:\nhy2://%s@%s:%s?insecure=1#Hysteria2\n", uuid, host, hy2Port);
     }
 
-    // ---------- 每日北京时间重启 ----------
+    // ---------- 每日北京时间 00:00 重启 ----------
     private static void scheduleDailyRestart() {
         ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
         Runnable restartTask = () -> {
