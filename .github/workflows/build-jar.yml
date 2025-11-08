@@ -22,15 +22,22 @@ jobs:
       - name: Grant execute permission for Gradle
         run: chmod +x gradlew
 
-      - name: Build server.jar
-        run: ./gradlew clean build --no-daemon
+      # ✅ 明确指定执行 JAR 打包任务
+      - name: Build fat server.jar
+        run: ./gradlew clean jar --no-daemon
 
+      # ✅ 检查是否生成文件（方便调试）
+      - name: List build output
+        run: ls -lh build/libs || true
+
+      # ✅ 上传到 GitHub Actions Artifact
       - name: Upload server.jar to Actions
         uses: actions/upload-artifact@v4
         with:
           name: server-jar
           path: build/libs/server.jar
 
+      # ✅ 自动发布到 Release 页面（可选）
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
