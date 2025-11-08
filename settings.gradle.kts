@@ -1,1 +1,1 @@
-rootProject.name = "paper-server"
+rootProject.name = "server"
