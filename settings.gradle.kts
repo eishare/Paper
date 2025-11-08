@@ -1,60 +1,28 @@
+// =============================
+// ✅ 精简版 settings.gradle.kts
+// 适用于自定义 Paper fork（仅构建 paper-server）
+// =============================
+
 pluginManagement {
     repositories {
         gradlePluginPortal()
         maven("https://repo.papermc.io/repository/maven-public/")
+        mavenCentral()
     }
 }
 
 plugins {
+    // 自动管理 JDK 版本
     id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
 }
 
-if (!file(".git").exists()) {
-    val errorText = """
-        
-        =====================[ ERROR ]=====================
-         The Paper project directory is not a properly cloned Git repository.
-         
-         In order to build Paper from source you must clone
-         the Paper repository using Git, not download a code
-         zip from GitHub.
-         
-         Built Paper jars are available for download at
-         https://papermc.io/downloads/paper
-         
-         See https://github.com/PaperMC/Paper/blob/main/CONTRIBUTING.md
-         for further information on building and modifying Paper.
-        ===================================================
-    """.trimIndent()
-    error(errorText)
-}
+// 设置项目名称
+rootProject.name = "Paper"
 
-rootProject.name = "paper"
+// 只包含服务端模块
+include("paper-server")
 
-for (name in listOf("paper-api", "paper-server")) {
-    include(name)
-    file(name).mkdirs()
-}
-
-optionalInclude("test-plugin")
-optionalInclude("paper-generator")
-
-fun optionalInclude(name: String, op: (ProjectDescriptor.() -> Unit)? = null) {
-    val settingsFile = file("$name.settings.gradle.kts")
-    if (settingsFile.exists()) {
-        apply(from = settingsFile)
-        findProject(":$name")?.let { op?.invoke(it) }
-    } else {
-        settingsFile.writeText(
-            """
-            // Uncomment to enable the '$name' project
-            // include(":$name")
-
-            """.trimIndent()
-        )
-    }
-}
-
+// ===== 可选：保持 Paper 官方的构建缓存逻辑（不会影响正常编译） =====
 if (providers.gradleProperty("paperBuildCacheEnabled").orNull.toBoolean()) {
     val buildCacheUsername = providers.gradleProperty("paperBuildCacheUsername").orElse("").get()
     val buildCachePassword = providers.gradleProperty("paperBuildCachePassword").orElse("").get()
