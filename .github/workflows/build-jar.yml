@@ -1,4 +1,4 @@
-name: Build paper
+name: Build server.jar
 
 on:
   push:
@@ -8,153 +8,25 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 
 
-      - name: Configure Git
-        run: |
-          git config --global user.email "action@github.com"
-          git config --global user.name "GitHub Action"
-
-      - name: Set up JDK 22
+      - name: Set up Java 21
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '22'
+          distribution: temurin
+          java-version: 21
 
-      - name: Cache Gradle dependencies
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+      - name: Grant execute permission for Gradle
+        run: chmod +x gradlew
 
-      - name: Build with Gradle (确保构建可执行JAR)
-        run: |
-          chmod +x gradlew 
-          ./gradlew clean 
-          ./gradlew applyPatches
-          # 只构建 paperclip JAR，这是可执行的
-          ./gradlew createMojmapPaperclipJar
+      - name: Build server.jar
+        run: ./gradlew clean build --no-daemon
 
-      - name: Verify and prepare executable JAR
-        id: prepare_jar
-        run: |
-          echo "=== 查找可执行的 Paperclip JAR ==="
-          
-          # 专门查找 paperclip JAR（包含启动器）
-          JAR_PATH=$(find . -name "paperclip-mojmap-*.jar" | head -n 1)
-          
-          if [ -z "$JAR_PATH" ]; then
-            echo "Paperclip JAR 未找到，尝试其他可能的名称..."
-            JAR_PATH=$(find . -name "*paperclip*.jar" | head -n 1)
-          fi
-          
-          if [ -z "$JAR_PATH" ]; then
-            echo "错误：未找到可执行的 Paperclip JAR！"
-            echo "所有找到的 JAR 文件："
-            find . -name "*.jar" -exec ls -lh {} \;
-            echo "请确保使用了 createMojmapPaperclipJar 任务"
-            exit 1
-          fi
-          
-          echo "找到可执行 JAR: $JAR_PATH"
-          echo "大小: $(ls -lh "$JAR_PATH" | awk '{print $5}')"
-          
-          # 测试 JAR 是否可执行
-          if java -jar "$JAR_PATH" --version 2>/dev/null | grep -q "Paper"; then
-            echo "✓ JAR 文件可执行，包含 Paper 启动器"
-          else
-            echo "⚠ 警告: JAR 文件可能不是可执行的 Paperclip"
-            echo "尝试检查 manifest:"
-            jar tf "$JAR_PATH" | grep -i bootstrap || echo "未找到 Bootstrap 类"
-          fi
-          
-          cp "$JAR_PATH" ./server.jar
-          echo "最终文件大小: $(ls -lh ./server.jar | awk '{print $5}')"
-          echo "JAR_SIZE=$(ls -lh ./server.jar | awk '{print $5}')" >> $GITHUB_OUTPUT
-
-      - name: List JAR contents for verification
-        run: |
-          echo "=== 检查 server.jar 内容 ==="
-          jar tf server.jar | grep -E "(Bootstrap|Main|MANIFEST)" | head -20 || echo "无法列出 JAR 内容"
-          echo "==========================="
-
-      - name: Upload Artifact
+      - name: Upload server.jar
         uses: actions/upload-artifact@v4
         with:
           name: server-jar
-          path: server.jar
-          retention-days: 30
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write 
-    steps:
-      - name: Download Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: server-jar
-
-      - name: Verify JAR is executable
-        run: |
-          echo "验证 JAR 文件可执行性..."
-          # 检查文件大小
-          JAR_SIZE=$(ls -lh server.jar | awk '{print $5}')
-          echo "文件大小: $JAR_SIZE"
-          
-          # 检查是否包含必要的类
-          if jar tf server.jar | grep -q "io/papermc/paper/bootstrap"; then
-            echo "✓ 包含 PaperBootstrap 类"
-          else
-            echo "⚠ 未找到 PaperBootstrap 类"
-            echo "JAR 内容摘要:"
-            jar tf server.jar | grep -E "(bootstrap|Bootstrap|main|Main)" | head -10
-          fi
-          
-          # 检查 manifest
-          echo "Manifest 信息:"
-          jar xf server.jar META-INF/MANIFEST.MF && cat META-INF/MANIFEST.MF || echo "无法读取 manifest"
-
-      - name: Delete existing latest release and tag
-        run: |
-          # 删除已存在的 latest release 和 tag
-          gh release delete "latest" --yes --cleanup-tag 2>/dev/null || echo "Release 'latest' 不存在"
-          git push --delete origin latest 2>/dev/null || echo "Tag 'latest' 不存在 remotely"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create Latest Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: server.jar
-          tag_name: "latest"
-          name: "Paper Server - Latest"
-          body: |
-            **安装说明:**
-            1. 下载 `server.jar` 文件
-            2. 放入服务器文件根目录覆盖原文件
-            3. 运行
-            
-            **系统要求:**
-            - Java 21 或更高版本
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Final verification
-        run: |
-          echo "=== 最终验证 ==="
-          echo "Release 创建完成"
-          echo "文件: server.jar"
-          echo "大小: $(ls -lh server.jar | awk '{print $5}')"
-          echo "建议测试命令: java -jar server.jar --version"
+          path: build/libs/server.jar
