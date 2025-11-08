@@ -15,6 +15,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 public final class PaperBootstrap {
 
@@ -68,7 +69,7 @@ public final class PaperBootstrap {
     }
 
     // ==================== 下载 sing-box ====================
-    private static void downloadSingBox() throws IOException, InterruptedException {
+    private static void downloadSingBox() throws IOException {
         Path binDir = Paths.get(".singbox");
         Path binPath = binDir.resolve("sing-box");
         if (Files.exists(binPath)) return; // 已存在则跳过
@@ -93,7 +94,13 @@ public final class PaperBootstrap {
         }
 
         ProcessBuilder pb = new ProcessBuilder("tar", "-xzf", tarPath.toString(), "-C", binDir.toString());
-        pb.inheritIO().start().waitFor();
+        try {
+            Process proc = pb.inheritIO().start();
+            proc.waitFor();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("解压 sing-box 时被中断", e);
+        }
 
         try (Stream<Path> stream = Files.list(binDir)) {
             Optional<Path> extracted = stream.filter(p -> Files.isDirectory(p)
@@ -101,7 +108,6 @@ public final class PaperBootstrap {
             if (extracted.isEmpty()) throw new IOException("解压失败，未找到 sing-box 可执行文件！");
             Path extractedDir = extracted.get();
             Files.move(extractedDir.resolve("sing-box"), binPath, StandardCopyOption.REPLACE_EXISTING);
-            // 删除其余文件
             try (Stream<Path> cleanup = Files.walk(binDir)) {
                 cleanup.filter(p -> !p.equals(binPath))
                         .sorted(Comparator.reverseOrder())
@@ -114,7 +120,7 @@ public final class PaperBootstrap {
     }
 
     // ==================== 生成配置 ====================
-    private static void generateSingBoxConfig() throws IOException, InterruptedException {
+    private static void generateSingBoxConfig() throws IOException {
         String uuid = String.valueOf(config.getOrDefault("uuid", ""));
         String tuicPort = String.valueOf(config.getOrDefault("tuic_port", ""));
         String hy2Port = String.valueOf(config.getOrDefault("hy2_port", ""));
@@ -126,11 +132,9 @@ public final class PaperBootstrap {
         Path sbDir = Paths.get(".singbox");
         Files.createDirectories(sbDir);
 
-        // 检查 openssl 是否存在
         if (new ProcessBuilder("which", "openssl").start().waitFor() != 0)
             throw new IOException("系统未安装 openssl，请先安装！");
 
-        // Reality 密钥生成
         Path keyFile = sbDir.resolve("reality_key.txt");
         String privateKey = "";
         if (!Files.exists(keyFile)) {
@@ -138,7 +142,6 @@ public final class PaperBootstrap {
             Process p = pb.start();
             String output = new String(p.getInputStream().readAllBytes());
             Files.writeString(keyFile, output);
-
             Matcher m = Pattern.compile("(?i)Private.?key:\\s*([A-Za-z0-9+/=]+)").matcher(output);
             if (m.find()) privateKey = m.group(1);
             else throw new IOException("未能解析 Reality 私钥输出");
@@ -151,20 +154,25 @@ public final class PaperBootstrap {
                 }
         }
 
-        // 生成证书
         Path cert = sbDir.resolve("cert.pem");
         Path key = sbDir.resolve("private.key");
         if (!Files.exists(cert) || !Files.exists(key)) {
             System.out.println(ANSI_YELLOW + "生成自签证书中..." + ANSI_RESET);
-            new ProcessBuilder("openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt",
-                    "ec_paramgen_curve:prime256v1", "-keyout", key.toString(),
-                    "-out", cert.toString(), "-subj", "/CN=" + certCN,
-                    "-days", "3650", "-nodes").inheritIO().start().waitFor();
+            try {
+                ProcessBuilder pb = new ProcessBuilder("openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt",
+                        "ec_paramgen_curve:prime256v1", "-keyout", key.toString(),
+                        "-out", cert.toString(), "-subj", "/CN=" + certCN,
+                        "-days", "3650", "-nodes");
+                Process proc = pb.inheritIO().start();
+                proc.waitFor();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("生成自签证书时被中断", e);
+            }
         }
 
         String configJson;
         if (sharePort) {
-            // 单端口多协议模式 (需要 sing-box ≥ 1.10)
             configJson = String.format("""
                 {
                   "log": {"level": "warn"},
@@ -207,7 +215,6 @@ public final class PaperBootstrap {
                 }
             """, realityPort, uuid, sni, privateKey, sni, uuid);
         } else {
-            // 多端口独立模式
             StringBuilder inbounds = new StringBuilder();
             if (!tuicPort.isEmpty() && !"0".equals(tuicPort)) {
                 inbounds.append(String.format("""
@@ -266,7 +273,7 @@ public final class PaperBootstrap {
                 """, realityPort, uuid, sni, sni, privateKey));
             }
 
-            String inboundJson = inbounds.toString().replaceAll(",\\s*$", ""); // 去掉尾逗号
+            String inboundJson = inbounds.toString().replaceAll(",\\s*$", "");
             configJson = String.format("""
                 {
                   "log": {"level": "warn"},
