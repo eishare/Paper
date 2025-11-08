@@ -101,8 +101,8 @@ public final class PaperBootstrap {
     }
 
     private static void generateSingBoxConfig() throws IOException, InterruptedException {
-        String uuid = config.get("uuid");
-        String tuicPort = config.get("tuic_port");
+        String uuid = config.get("0da8046c-f77c-48ea-ba70-28ed7a13f146");
+        String tuicPort = config.get("8399");
         String hy2Port = config.get("hy2_port");
         String realityPort = config.get("reality_port");
         String sni = config.getOrDefault("sni", "www.bing.com");
