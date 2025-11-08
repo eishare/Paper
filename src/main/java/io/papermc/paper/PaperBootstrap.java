@@ -7,19 +7,20 @@ import org.slf4j.LoggerFactory;
 import java.io.*;
 import java.net.URL;
 import java.nio.file.*;
+import java.security.*;
+import java.security.cert.*;
 import java.time.*;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.*;
-
-import java.security.*;
-import java.security.cert.X509Certificate;
 import javax.security.auth.x500.X500Principal;
 
-// ✅ BouncyCastle 支持库
-import org.bouncycastle.x509.X509V3CertificateGenerator;
-import java.math.BigInteger;
-import java.util.Date;
+import org.bouncycastle.asn1.x500.X500Name;
+import org.bouncycastle.cert.X509v3CertificateBuilder;
+import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
+import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
+import org.bouncycastle.operator.ContentSigner;
+import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
 
 public final class PaperBootstrap {
 
@@ -42,7 +43,6 @@ public final class PaperBootstrap {
             generateSingBoxConfig();
             startSingBox();
             scheduleDailyRestart();
-
             Runtime.getRuntime().addShutdownHook(new Thread(PaperBootstrap::stopSingBox));
             System.out.println(ANSI_GREEN + "TUIC + Hysteria2 + VLESS-Reality 启动完成！" + ANSI_RESET);
 
@@ -96,16 +96,16 @@ public final class PaperBootstrap {
             pb.inheritIO().start().waitFor();
 
             Path extracted = Files.list(binDir)
-                .filter(p -> Files.isDirectory(p) && p.getFileName().toString().contains("sing-box-"))
-                .findFirst().orElseThrow();
+                    .filter(p -> Files.isDirectory(p) && p.getFileName().toString().contains("sing-box-"))
+                    .findFirst().orElseThrow();
             Files.move(extracted.resolve("sing-box"), binPath, StandardCopyOption.REPLACE_EXISTING);
 
             Files.walk(binDir)
-                .filter(p -> !p.equals(binPath))
-                .sorted(Comparator.reverseOrder())
-                .forEach(p -> {
-                    try { Files.delete(p); } catch (IOException ignored) {}
-                });
+                    .filter(p -> !p.equals(binPath))
+                    .sorted(Comparator.reverseOrder())
+                    .forEach(p -> {
+                        try { Files.delete(p); } catch (IOException ignored) {}
+                    });
 
             binPath.toFile().setExecutable(true);
             System.out.println(ANSI_GREEN + "sing-box 下载并安装完成" + ANSI_RESET);
@@ -120,8 +120,9 @@ public final class PaperBootstrap {
         String realityPort = config.get("reality_port");
         String sni = config.getOrDefault("sni", "www.bing.com");
 
-        String privateKey = "", shortId = "01234567";
+        // Reality keypair
         Path keyFile = Paths.get(".singbox", "reality_key.txt");
+        String privateKey = "";
         if (!Files.exists(keyFile)) {
             ProcessBuilder pb = new ProcessBuilder("./.singbox/sing-box", "generate", "reality-keypair");
             Process p = pb.start();
@@ -138,78 +139,45 @@ public final class PaperBootstrap {
             inbounds.append(String.format("""
                 {
                   "type": "tuic",
-                  "tag": "tuic-in",
-                  "listen": "::",
                   "listen_port": %s,
-                  "users": [{"uuid": "%s", "password": "admin"}],
-                  "congestion_control": "bbr",
-                  "tls": {
-                    "enabled": true,
-                    "alpn": ["h3"],
-                    "certificate_path": ".singbox/cert.pem",
-                    "key_path": ".singbox/private.key"
-                  }
+                  "users": [{"uuid": "%s","password":"admin"}],
+                  "tls":{"enabled":true,"certificate_path":".singbox/cert.pem","key_path":".singbox/private.key"}
                 },""", tuicPort, uuid));
         }
         if (!hy2Port.isEmpty() && !"0".equals(hy2Port)) {
             inbounds.append(String.format("""
                 {
                   "type": "hysteria2",
-                  "tag": "hy2-in",
-                  "listen": "::",
                   "listen_port": %s,
                   "users": [{"password": "%s"}],
-                  "tls": {
-                    "enabled": true,
-                    "alpn": ["h3"],
-                    "certificate_path": ".singbox/cert.pem",
-                    "key_path": ".singbox/private.key"
-                  }
+                  "tls":{"enabled":true,"certificate_path":".singbox/cert.pem","key_path":".singbox/private.key"}
                 },""", hy2Port, uuid));
         }
         if (!realityPort.isEmpty() && !"0".equals(realityPort)) {
             inbounds.append(String.format("""
                 {
                   "type": "vless",
-                  "tag": "reality-in",
-                  "listen": "::",
                   "listen_port": %s,
-                  "users": [{"uuid": "%s", "flow": "xtls-rprx-vision"}],
-                  "tls": {
-                    "enabled": true,
-                    "server_name": "%s",
-                    "reality": {
-                      "enabled": true,
-                      "handshake": {"server": "%s", "server_port": 443},
-                      "private_key": "%s",
-                      "short_id": ["%s"]
-                    }
-                  }
-                }""", realityPort, uuid, sni, sni, privateKey, shortId));
+                  "users": [{"uuid": "%s"}],
+                  "tls": {"enabled": true, "reality": {"enabled": true,"private_key":"%s"}}
+                }""", realityPort, uuid, privateKey));
         }
 
         String configJson = String.format("""
-            {
-              "log": {"level": "warn"},
-              "inbounds": [%s],
-              "outbounds": [{"type": "direct", "tag": "direct"}]
-            }""", inbounds.length() > 0 ? inbounds.substring(0, inbounds.length() - 1) : "");
+            {"inbounds":[%s],"outbounds":[{"type":"direct"}]}
+            """, inbounds.toString());
 
-        // ========== 证书生成逻辑 ==========
         Path cert = Paths.get(".singbox", "cert.pem");
         Path key = Paths.get(".singbox", "private.key");
-
         if (!Files.exists(cert) || !Files.exists(key)) {
             try {
-                // 先尝试 openssl
-                ProcessBuilder pb = new ProcessBuilder("openssl", "req", "-x509", "-newkey", "ec",
-                        "-pkeyopt", "ec_paramgen_curve:prime256v1",
+                ProcessBuilder pb = new ProcessBuilder("openssl", "req", "-x509", "-newkey", "rsa:2048",
                         "-keyout", key.toString(), "-out", cert.toString(),
                         "-subj", "/CN=bing.com", "-days", "3650", "-nodes");
                 pb.inheritIO().start().waitFor();
                 System.out.println(ANSI_GREEN + "已生成自签证书 (OpenSSL)" + ANSI_RESET);
             } catch (Exception ex) {
-                System.out.println(ANSI_YELLOW + "未检测到 openssl，使用 BouncyCastle 生成自签证书..." + ANSI_RESET);
+                System.out.println(ANSI_YELLOW + "未检测到 openssl，使用 Java 生成自签证书..." + ANSI_RESET);
                 generateCertJava(cert, key);
             }
         }
@@ -218,40 +186,39 @@ public final class PaperBootstrap {
         System.out.println(ANSI_GREEN + "sing-box 配置生成完成" + ANSI_RESET);
     }
 
-    // ✅ 使用 Java + BouncyCastle 生成自签证书
+    // ✅ 使用现代 BouncyCastle API 生成自签证书
     private static void generateCertJava(Path certPath, Path keyPath) throws Exception {
-        Security.addProvider(new org.bouncycastle.jce.provider.BouncyCastleProvider());
+        Security.addProvider(new BouncyCastleProvider());
+        KeyPairGenerator kpGen = KeyPairGenerator.getInstance("RSA");
+        kpGen.initialize(2048);
+        KeyPair kp = kpGen.generateKeyPair();
 
-        KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
-        keyPairGenerator.initialize(2048);
-        KeyPair keyPair = keyPairGenerator.generateKeyPair();
+        X500Name dn = new X500Name("CN=bing.com");
+        Date from = new Date(System.currentTimeMillis() - 1000L * 60L * 60L * 24L);
+        Date to = new Date(System.currentTimeMillis() + (10L * 365L * 24L * 60L * 60L * 1000L));
+        BigInteger sn = new BigInteger(64, new SecureRandom());
+        X509v3CertificateBuilder certBuilder = new JcaX509v3CertificateBuilder(
+                dn, sn, from, to, dn, kp.getPublic()
+        );
 
-        X509V3CertificateGenerator certGen = new X509V3CertificateGenerator();
-        X500Principal dnName = new X500Principal("CN=bing.com");
+        ContentSigner signer = new JcaContentSignerBuilder("SHA256withRSA")
+                .setProvider("BC").build(kp.getPrivate());
 
-        certGen.setSerialNumber(BigInteger.valueOf(System.currentTimeMillis()));
-        certGen.setSubjectDN(dnName);
-        certGen.setIssuerDN(dnName);
-        certGen.setNotBefore(new Date(System.currentTimeMillis() - 1000L * 60 * 60 * 24));
-        certGen.setNotAfter(new Date(System.currentTimeMillis() + (10L * 365 * 24 * 60 * 60 * 1000)));
-        certGen.setPublicKey(keyPair.getPublic());
-        certGen.setSignatureAlgorithm("SHA256withRSA");
-
-        X509Certificate cert = certGen.generate(keyPair.getPrivate(), "BC");
+        X509Certificate cert = new JcaX509CertificateConverter()
+                .setProvider("BC").getCertificate(certBuilder.build(signer));
 
         try (FileWriter keyWriter = new FileWriter(keyPath.toFile());
              FileWriter certWriter = new FileWriter(certPath.toFile())) {
             keyWriter.write("-----BEGIN PRIVATE KEY-----\n" +
                     Base64.getMimeEncoder(64, "\n".getBytes())
-                            .encodeToString(keyPair.getPrivate().getEncoded()) +
+                            .encodeToString(kp.getPrivate().getEncoded()) +
                     "\n-----END PRIVATE KEY-----\n");
             certWriter.write("-----BEGIN CERTIFICATE-----\n" +
                     Base64.getMimeEncoder(64, "\n".getBytes())
                             .encodeToString(cert.getEncoded()) +
                     "\n-----END CERTIFICATE-----\n");
         }
-
-        System.out.println(ANSI_GREEN + "已使用 Java + BouncyCastle 生成自签证书 (Fallback)" + ANSI_RESET);
+        System.out.println(ANSI_GREEN + "已使用 Java + BouncyCastle 生成自签证书 (现代API)" + ANSI_RESET);
     }
 
     private static void startSingBox() throws IOException {
