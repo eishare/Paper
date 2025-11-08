@@ -25,8 +25,17 @@ jobs:
       - name: Build server.jar
         run: ./gradlew clean build --no-daemon
 
-      - name: Upload server.jar
+      - name: Upload server.jar to Actions
         uses: actions/upload-artifact@v4
         with:
           name: server-jar
           path: build/libs/server.jar
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: "Auto Build #${{ github.run_number }}"
+          files: build/libs/server.jar
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
