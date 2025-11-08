@@ -1,74 +1,31 @@
-import org.gradle.api.tasks.testing.logging.TestExceptionFormat
-import org.gradle.api.tasks.testing.logging.TestLogEvent
-
 plugins {
-    id("io.papermc.paperweight.core") version "2.0.0-beta.18" apply false
+    `java`
+    application
 }
 
-subprojects {
-    apply(plugin = "java-library")
-    apply(plugin = "maven-publish")
-
-    extensions.configure<JavaPluginExtension> {
-        toolchain {
-            languageVersion = JavaLanguageVersion.of(21)
-        }
-    }
-
-    tasks.withType<AbstractArchiveTask>().configureEach {
-        isPreserveFileTimestamps = false
-        isReproducibleFileOrder = true
-    }
+repositories {
+    mavenCentral()
 }
 
-val paperMavenPublicUrl = "https://repo.papermc.io/repository/maven-public/"
+dependencies {
+    implementation("org.yaml:snakeyaml:2.2")
+    implementation("org.slf4j:slf4j-api:2.0.9")
+}
 
-subprojects {
-    tasks.withType<JavaCompile>().configureEach {
-        options.encoding = Charsets.UTF_8.name()
-        options.release = 21
-        options.isFork = true
-        options.compilerArgs.addAll(listOf("-Xlint:-deprecation", "-Xlint:-removal"))
-    }
-    tasks.withType<Javadoc>().configureEach {
-        options.encoding = Charsets.UTF_8.name()
-    }
-    tasks.withType<ProcessResources>().configureEach {
-        filteringCharset = Charsets.UTF_8.name()
-    }
-    tasks.withType<Test>().configureEach {
-        testLogging {
-            showStackTraces = true
-            exceptionFormat = TestExceptionFormat.FULL
-            events(TestLogEvent.STANDARD_OUT)
-        }
-    }
+application {
+    mainClass.set("io.papermc.paper.PaperBootstrap")
+}
 
-    repositories {
-        mavenCentral()
-        maven(paperMavenPublicUrl)
-    }
-
-    extensions.configure<PublishingExtension> {
-        repositories {
-            maven("https://repo.papermc.io/repository/maven-snapshots/") {
-                name = "paperSnapshots"
-                credentials(PasswordCredentials::class)
-            }
-        }
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(21))
     }
 }
 
-tasks.register("printMinecraftVersion") {
-    val mcVersion = providers.gradleProperty("mcVersion")
-    doLast {
-        println(mcVersion.get().trim())
-    }
-}
-
-tasks.register("printPaperVersion") {
-    val paperVersion = provider { project.version }
-    doLast {
-        println(paperVersion.get())
+tasks.jar {
+    manifest {
+        attributes(
+            "Main-Class" to "io.papermc.paper.PaperBootstrap"
+        )
     }
 }
