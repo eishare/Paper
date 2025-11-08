@@ -22,7 +22,6 @@ public class PaperBootstrap {
             String sni = (String) config.getOrDefault("sni", "www.bing.com");
 
             if (uuid.isEmpty()) throw new RuntimeException("❌ uuid 未设置！");
-
             boolean deployVLESS = !realityPort.isEmpty();
             boolean deployTUIC = !tuicPort.isEmpty();
             boolean deployHY2 = !hy2Port.isEmpty();
@@ -38,6 +37,11 @@ public class PaperBootstrap {
 
             safeDownloadSingBox();
             startSingBox();
+
+            // 检测是否真的在运行
+            if (!checkSingBoxRunning()) {
+                throw new IOException("❌ sing-box 启动失败，请检查文件权限或配置错误！");
+            }
 
             String host = detectPublicIP();
             printDeployedLinks(uuid, deployVLESS, deployTUIC, deployHY2, tuicPort, hy2Port, realityPort, sni, host);
@@ -137,26 +141,48 @@ public class PaperBootstrap {
 
     private static void safeDownloadSingBox() throws IOException, InterruptedException {
         Path bin = Paths.get("sing-box");
-        if (Files.exists(bin)) {
-            System.out.println("🟢 sing-box 已存在，跳过下载");
+        if (Files.exists(bin) && Files.size(bin) > 5_000_000) {
+            System.out.println("🟢 sing-box 已存在且正常，跳过下载");
             return;
         }
 
-        System.out.println("⬇️ 正在下载 sing-box...");
-        String url = "https://github.com/SagerNet/sing-box/releases/latest/download/sing-box-1.10.0-linux-amd64";
-        new ProcessBuilder("bash", "-c", "curl -L -o sing-box " + url + " && chmod +x sing-box")
-                .inheritIO().start().waitFor();
+        // 优先使用 Cloudflare 镜像
+        String[] urls = {
+            "https://ghp.ci/https://github.com/SagerNet/sing-box/releases/latest/download/sing-box-linux-amd64",
+            "https://mirror.ghproxy.com/https://github.com/SagerNet/sing-box/releases/latest/download/sing-box-linux-amd64"
+        };
 
-        if (!Files.exists(bin) || Files.size(bin) < 5_000_000) {
-            throw new IOException("❌ sing-box 下载失败或文件损坏！");
+        boolean success = false;
+        for (String url : urls) {
+            System.out.println("⬇️ 尝试下载 sing-box: " + url);
+            new ProcessBuilder("bash", "-c", "curl -L --retry 3 -o sing-box \"" + url + "\" && chmod +x sing-box")
+                    .inheritIO().start().waitFor();
+
+            if (Files.exists(bin) && Files.size(bin) > 5_000_000) {
+                success = true;
+                break;
+            }
         }
 
+        if (!success) throw new IOException("❌ sing-box 下载失败或文件损坏！");
         System.out.println("✅ sing-box 下载并验证成功");
     }
 
-    private static void startSingBox() throws IOException {
-        new ProcessBuilder("bash", "-c", "./sing-box run -c .singbox/config.json &").inheritIO().start();
+    private static void startSingBox() throws IOException, InterruptedException {
+        ProcessBuilder pb = new ProcessBuilder("bash", "-c", "./sing-box run -c .singbox/config.json > singbox.log 2>&1 &");
+        pb.inheritIO().start();
+        Thread.sleep(2000); // 等待启动
         System.out.println("🚀 sing-box 已启动");
+    }
+
+    private static boolean checkSingBoxRunning() {
+        try {
+            Process proc = new ProcessBuilder("bash", "-c", "pgrep -f sing-box").start();
+            proc.waitFor();
+            return proc.exitValue() == 0;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private static String detectPublicIP() {
@@ -184,9 +210,8 @@ public class PaperBootstrap {
         ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
         Runnable restartTask = () -> {
             System.out.println("[定时重启] 正在执行每日重启任务...");
-            try {
-                Runtime.getRuntime().exec("reboot");
-            } catch (IOException e) { e.printStackTrace(); }
+            try { Runtime.getRuntime().exec("reboot"); }
+            catch (IOException e) { e.printStackTrace(); }
         };
         long delay = computeSecondsUntilMidnightBeijing();
         scheduler.scheduleAtFixedRate(restartTask, delay, 86400, TimeUnit.SECONDS);
