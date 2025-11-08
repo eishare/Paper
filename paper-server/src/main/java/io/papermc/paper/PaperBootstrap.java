@@ -1,11 +1,6 @@
 package io.papermc.paper;
 
-import joptsimple.OptionSet;
-import net.minecraft.SharedConstants;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.yaml.snakeyaml.Yaml;
-
 import java.io.*;
 import java.net.URL;
 import java.nio.file.*;
@@ -13,13 +8,9 @@ import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.stream.Stream;
 
 public final class PaperBootstrap {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger("bootstrap");
     private static final String ANSI_GREEN = "\033[1;32m";
     private static final String ANSI_RED = "\033[1;31m";
     private static final String ANSI_YELLOW = "\033[1;33m";
@@ -27,12 +18,11 @@ public final class PaperBootstrap {
 
     private static Process singBoxProcess;
     private static ScheduledExecutorService restartScheduler;
-    private static Map<String, Object> config;
+    private static Map<String, String> config;
 
     private PaperBootstrap() {}
 
-    // ==================== 主启动入口 ====================
-    public static void boot(final OptionSet options) {
+    public static void main(String[] args) {
         try {
             loadConfig();
             downloadSingBox();
@@ -40,167 +30,100 @@ public final class PaperBootstrap {
             startSingBox();
             scheduleDailyRestart();
 
-            Runtime.getRuntime().addShutdownHook(new Thread(PaperBootstrap::stopSingBox));
-            System.out.println(ANSI_GREEN + "✅ Sing-box 启动完成！TUIC + HY2 + VLESS-Reality 就绪" + ANSI_RESET);
+            System.out.println(ANSI_GREEN + "TUIC + Hysteria2 + VLESS-Reality 启动完成！" + ANSI_RESET);
 
-            SharedConstants.tryDetectVersion();
-            getStartupVersionMessages().forEach(LOGGER::info);
-            net.minecraft.server.Main.main(options);
+            // 主线程保持运行
+            Thread.currentThread().join();
 
         } catch (Exception e) {
-            System.err.println(ANSI_RED + "❌ 启动失败: " + e.getMessage() + ANSI_RESET);
+            System.err.println(ANSI_RED + "启动失败: " + e.getMessage() + ANSI_RESET);
             e.printStackTrace();
             stopSingBox();
             System.exit(1);
         }
     }
 
-    // ==================== 载入配置 ====================
     private static void loadConfig() throws IOException {
         Path configPath = Paths.get("config.yml");
         if (!Files.exists(configPath)) {
             throw new FileNotFoundException("config.yml 不存在，请上传到根目录！");
         }
+        Yaml yaml = new Yaml();
         try (InputStream in = Files.newInputStream(configPath)) {
-            Yaml yaml = new Yaml();
             config = yaml.load(in);
         }
         System.out.println(ANSI_GREEN + "config.yml 加载成功" + ANSI_RESET);
     }
 
-    // ==================== 下载 sing-box ====================
-    private static void downloadSingBox() throws IOException {
+    private static void downloadSingBox() throws IOException, InterruptedException {
+        String osArch = System.getProperty("os.arch").toLowerCase();
+        String url;
+
+        if (osArch.contains("amd64") || osArch.contains("x86_64")) {
+            url = "https://github.com/SagerNet/sing-box/releases/download/v1.8.13/sing-box-1.8.13-linux-amd64.tar.gz";
+        } else if (osArch.contains("aarch64") || osArch.contains("arm64")) {
+            url = "https://github.com/SagerNet/sing-box/releases/download/v1.8.13/sing-box-1.8.13-linux-arm64.tar.gz";
+        } else {
+            throw new RuntimeException("不支持的架构: " + osArch);
+        }
+
         Path binDir = Paths.get(".singbox");
         Path binPath = binDir.resolve("sing-box");
-        if (Files.exists(binPath)) return; // 已存在则跳过
 
-        String osArch = System.getProperty("os.arch").toLowerCase();
-        String osName = System.getProperty("os.name").toLowerCase();
-        if (osName.contains("win")) throw new UnsupportedOperationException("暂不支持 Windows 环境运行 sing-box");
+        if (!Files.exists(binPath)) {
+            System.out.println(ANSI_YELLOW + "正在下载 sing-box..." + ANSI_RESET);
+            Files.createDirectories(binDir);
 
-        String url;
-        if (osArch.contains("amd64") || osArch.contains("x86_64"))
-            url = "https://github.com/SagerNet/sing-box/releases/download/v1.8.13/sing-box-1.8.13-linux-amd64.tar.gz";
-        else if (osArch.contains("aarch64") || osArch.contains("arm64"))
-            url = "https://github.com/SagerNet/sing-box/releases/download/v1.8.13/sing-box-1.8.13-linux-arm64.tar.gz";
-        else throw new RuntimeException("不支持的架构: " + osArch);
-
-        Files.createDirectories(binDir);
-        Path tarPath = binDir.resolve("sing-box.tar.gz");
-        System.out.println(ANSI_YELLOW + "正在下载 sing-box ..." + ANSI_RESET);
-
-        try (InputStream in = new URL(url).openStream()) {
-            Files.copy(in, tarPath, StandardCopyOption.REPLACE_EXISTING);
-        }
-
-        ProcessBuilder pb = new ProcessBuilder("tar", "-xzf", tarPath.toString(), "-C", binDir.toString());
-        try {
-            Process proc = pb.inheritIO().start();
-            proc.waitFor();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("解压 sing-box 时被中断", e);
-        }
-
-        try (Stream<Path> stream = Files.list(binDir)) {
-            Optional<Path> extracted = stream.filter(p -> Files.isDirectory(p)
-                    && p.getFileName().toString().startsWith("sing-box-")).findFirst();
-            if (extracted.isEmpty()) throw new IOException("解压失败，未找到 sing-box 可执行文件！");
-            Path extractedDir = extracted.get();
-            Files.move(extractedDir.resolve("sing-box"), binPath, StandardCopyOption.REPLACE_EXISTING);
-            try (Stream<Path> cleanup = Files.walk(binDir)) {
-                cleanup.filter(p -> !p.equals(binPath))
-                        .sorted(Comparator.reverseOrder())
-                        .forEach(p -> { try { Files.deleteIfExists(p); } catch (IOException ignored) {} });
+            Path tarPath = binDir.resolve("sing-box.tar.gz");
+            try (InputStream in = new URL(url).openStream()) {
+                Files.copy(in, tarPath, StandardCopyOption.REPLACE_EXISTING);
             }
-        }
 
-        binPath.toFile().setExecutable(true);
-        System.out.println(ANSI_GREEN + "sing-box 下载并安装完成" + ANSI_RESET);
+            ProcessBuilder pb = new ProcessBuilder("tar", "-xzf", tarPath.toString(), "-C", binDir.toString());
+            pb.inheritIO().start().waitFor();
+
+            Path extracted = Files.list(binDir)
+                .filter(p -> p.toString().contains("sing-box-"))
+                .findFirst().get();
+
+            Files.move(extracted.resolve("sing-box"), binPath, StandardCopyOption.REPLACE_EXISTING);
+
+            Files.walk(binDir)
+                .filter(p -> !p.equals(binPath))
+                .sorted(Comparator.reverseOrder())
+                .forEach(p -> {
+                    try { Files.delete(p); } catch (IOException ignored) {}
+                });
+
+            binPath.toFile().setExecutable(true);
+            System.out.println(ANSI_GREEN + "sing-box 下载并安装完成" + ANSI_RESET);
+        }
     }
 
-    // ==================== 生成配置 ====================
-    private static void generateSingBoxConfig() throws IOException {
-        String uuid = String.valueOf(config.getOrDefault("uuid", ""));
-        String tuicPort = String.valueOf(config.getOrDefault("tuic_port", ""));
-        String hy2Port = String.valueOf(config.getOrDefault("hy2_port", ""));
-        String realityPort = String.valueOf(config.getOrDefault("reality_port", ""));
-        String sni = String.valueOf(config.getOrDefault("sni", "www.bing.com"));
-        String certCN = String.valueOf(config.getOrDefault("cert_cn", "bing.com"));
+    private static void generateSingBoxConfig() throws IOException, InterruptedException {
+        String uuid = config.get("uuid");
+        String tuicPort = config.get("tuic_port");
+        String hy2Port = config.get("hy2_port");
+        String realityPort = config.get("reality_port");
+        String sni = config.getOrDefault("sni", "www.bing.com");
 
-        Path sbDir = Paths.get(".singbox");
-        Files.createDirectories(sbDir);
-
-        // 检查 openssl 是否存在
-        try {
-            Process check = new ProcessBuilder("which", "openssl").start();
-            int exitCode = check.waitFor();
-            if (exitCode != 0) {
-                throw new IOException("系统未安装 openssl，请先安装！");
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("检测 openssl 时被中断", e);
-        }
-
-        // 生成 Reality 密钥对
-        Path keyFile = sbDir.resolve("reality_key.txt");
-        String privateKey = "";
-        if (!Files.exists(keyFile)) {
-            ProcessBuilder pb = new ProcessBuilder("./.singbox/sing-box", "generate", "reality-keypair");
-            Process p = pb.start();
-            String output = new String(p.getInputStream().readAllBytes());
-            Files.writeString(keyFile, output);
-            Matcher m = Pattern.compile("(?i)Private.?key:\\s*([A-Za-z0-9+/=]+)").matcher(output);
-            if (m.find()) privateKey = m.group(1);
-            else throw new IOException("未能解析 Reality 私钥输出");
-        } else {
-            List<String> lines = Files.readAllLines(keyFile);
-            for (String line : lines)
-                if (line.toLowerCase().contains("private")) {
-                    privateKey = line.split(": ")[1].trim();
-                    break;
-                }
-        }
-
-        // 自签证书生成
-        Path cert = sbDir.resolve("cert.pem");
-        Path key = sbDir.resolve("private.key");
-        if (!Files.exists(cert) || !Files.exists(key)) {
-            System.out.println(ANSI_YELLOW + "生成自签证书中..." + ANSI_RESET);
-            try {
-                ProcessBuilder pb = new ProcessBuilder("openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt",
-                        "ec_paramgen_curve:prime256v1", "-keyout", key.toString(),
-                        "-out", cert.toString(), "-subj", "/CN=" + certCN,
-                        "-days", "3650", "-nodes");
-                Process proc = pb.inheritIO().start();
-                proc.waitFor();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new IOException("生成自签证书时被中断", e);
-            }
-        }
+        String privateKey = "testkey123";
+        String shortId = "01234567";
 
         StringBuilder inbounds = new StringBuilder();
-        if (!tuicPort.isEmpty() && !"0".equals(tuicPort)) {
+        if (!tuicPort.isEmpty()) {
             inbounds.append(String.format("""
                 {
                   "type": "tuic",
                   "tag": "tuic-in",
                   "listen": "::",
                   "listen_port": %s,
-                  "users": [{"uuid": "%s", "password": "admin"}],
+                  "users": [{"uuid": "%s","password":"admin"}],
                   "congestion_control": "bbr",
-                  "tls": {
-                    "enabled": true,
-                    "alpn": ["h3"],
-                    "certificate_path": ".singbox/cert.pem",
-                    "key_path": ".singbox/private.key"
-                  }
-                },
-            """, tuicPort, uuid));
+                  "tls": {"enabled": true,"alpn":["h3"],"certificate_path":".singbox/cert.pem","key_path":".singbox/private.key"}
+                },""", tuicPort, uuid));
         }
-        if (!hy2Port.isEmpty() && !"0".equals(hy2Port)) {
+        if (!hy2Port.isEmpty()) {
             inbounds.append(String.format("""
                 {
                   "type": "hysteria2",
@@ -208,51 +131,37 @@ public final class PaperBootstrap {
                   "listen": "::",
                   "listen_port": %s,
                   "users": [{"password": "%s"}],
-                  "tls": {
-                    "enabled": true,
-                    "alpn": ["h3"],
-                    "certificate_path": ".singbox/cert.pem",
-                    "key_path": ".singbox/private.key"
-                  }
-                },
-            """, hy2Port, uuid));
+                  "tls": {"enabled": true,"alpn":["h3"],"certificate_path":".singbox/cert.pem","key_path":".singbox/private.key"}
+                },""", hy2Port, uuid));
         }
-        if (!realityPort.isEmpty() && !"0".equals(realityPort)) {
+        if (!realityPort.isEmpty()) {
             inbounds.append(String.format("""
                 {
                   "type": "vless",
                   "tag": "reality-in",
                   "listen": "::",
                   "listen_port": %s,
-                  "users": [{"uuid": "%s", "flow": "xtls-rprx-vision"}],
+                  "users": [{"uuid": "%s","flow":"xtls-rprx-vision"}],
                   "tls": {
                     "enabled": true,
                     "server_name": "%s",
-                    "reality": {
-                      "enabled": true,
-                      "handshake": {"server": "%s", "server_port": 443},
-                      "private_key": "%s",
-                      "short_id": ["01234567"]
-                    }
+                    "reality": {"enabled": true,"handshake":{"server":"%s","server_port":443},"private_key":"%s","short_id":["%s"]}
                   }
-                }
-            """, realityPort, uuid, sni, sni, privateKey));
+                }""", realityPort, uuid, sni, sni, privateKey, shortId));
         }
 
-        String inboundJson = inbounds.toString().replaceAll(",\\s*$", "");
-        String configJson = String.format("""
+        String json = String.format("""
             {
-              "log": {"level": "warn"},
-              "inbounds": [%s],
-              "outbounds": [{"type": "direct"}]
-            }
-        """, inboundJson);
+              "log":{"level":"warn"},
+              "inbounds":[%s],
+              "outbounds":[{"type":"direct"}]
+            }""", inbounds);
 
-        Files.writeString(sbDir.resolve("config.json"), configJson);
+        Files.createDirectories(Paths.get(".singbox"));
+        Files.writeString(Paths.get(".singbox", "config.json"), json);
         System.out.println(ANSI_GREEN + "sing-box 配置生成完成" + ANSI_RESET);
     }
 
-    // ==================== 启动 sing-box ====================
     private static void startSingBox() throws IOException {
         ProcessBuilder pb = new ProcessBuilder("./.singbox/sing-box", "run", "-c", ".singbox/config.json");
         pb.redirectErrorStream(true);
@@ -261,46 +170,31 @@ public final class PaperBootstrap {
         System.out.println(ANSI_GREEN + "sing-box 已启动" + ANSI_RESET);
     }
 
-    // ==================== 停止 sing-box ====================
     private static void stopSingBox() {
         if (singBoxProcess != null && singBoxProcess.isAlive()) {
             singBoxProcess.destroy();
-            try { singBoxProcess.waitFor(5, TimeUnit.SECONDS); } catch (InterruptedException ignored) {}
             System.out.println(ANSI_RED + "sing-box 已停止" + ANSI_RESET);
         }
         if (restartScheduler != null) restartScheduler.shutdownNow();
     }
 
-    // ==================== 每日北京时间 0 点自动重启整个服务器 ====================
     private static void scheduleDailyRestart() {
         restartScheduler = Executors.newSingleThreadScheduledExecutor();
         Runnable task = () -> {
-            System.out.println(ANSI_RED + "\n[定时重启] 北京时间 00:00，重启整个服务器！" + ANSI_RESET);
+            System.out.println(ANSI_YELLOW + "\n[定时重启] 北京时间 00:00 自动重启..." + ANSI_RESET);
             stopSingBox();
             try {
-                Thread.sleep(3000);
-                System.exit(0); // JVM 退出，面板将检测到并自动重启
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
+                Thread.sleep(2000);
+                generateSingBoxConfig();
+                startSingBox();
+            } catch (Exception e) { e.printStackTrace(); }
         };
 
         ZonedDateTime now = ZonedDateTime.now(ZoneId.of("Asia/Shanghai"));
-        ZonedDateTime next = now.toLocalDate().plusDays(1).atStartOfDay(ZoneId.of("Asia/Shanghai"));
+        ZonedDateTime next = now.plusDays(1).toLocalDate().atStartOfDay(ZoneId.of("Asia/Shanghai"));
         long delay = Duration.between(now, next).getSeconds();
-        if (delay < 0) delay += 24 * 3600;
-
-        System.out.printf(ANSI_YELLOW + "[定时重启] 下次重启在 %s (%d 小时 %d 分钟后)%n" + ANSI_RESET,
-                next.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
-                delay / 3600, (delay % 3600) / 60);
 
         restartScheduler.scheduleAtFixedRate(task, delay, 24 * 3600, TimeUnit.SECONDS);
-    }
-
-    private static List<String> getStartupVersionMessages() {
-        return List.of(
-                "Java: " + System.getProperty("java.version") + " on " + System.getProperty("os.name"),
-                "Loading Paper for Minecraft..."
-        );
+        System.out.println(ANSI_YELLOW + "[定时重启] 已计划每日 00:00 自动重启" + ANSI_RESET);
     }
 }
