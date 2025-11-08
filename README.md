@@ -4,7 +4,7 @@ Paper [![Paper Build Status](https://img.shields.io/github/actions/workflow/stat
 [![Open Collective](https://img.shields.io/opencollective/all/papermc?label=OpenCollective%20Sponsors)](https://opencollective.com/papermc)
 ===========
 
-### 自动构建paper server.jar指南
+### paper项目更新中，会有较大精简，请静待。。。
 
 1：fork本项目
 
