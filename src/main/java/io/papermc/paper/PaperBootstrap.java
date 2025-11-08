@@ -1,9 +1,8 @@
 package io.papermc.paper;
 
-import net.minecraft.SharedConstants;
+import org.yaml.snakeyaml.Yaml;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.yaml.snakeyaml.Yaml;
 
 import java.io.*;
 import java.net.URL;
@@ -12,6 +11,15 @@ import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.*;
+
+import java.security.*;
+import java.security.cert.X509Certificate;
+import javax.security.auth.x500.X500Principal;
+
+// ✅ BouncyCastle 支持库
+import org.bouncycastle.x509.X509V3CertificateGenerator;
+import java.math.BigInteger;
+import java.util.Date;
 
 public final class PaperBootstrap {
 
@@ -84,17 +92,14 @@ public final class PaperBootstrap {
                 Files.copy(in, tarPath, StandardCopyOption.REPLACE_EXISTING);
             }
 
-            // 解压
             ProcessBuilder pb = new ProcessBuilder("tar", "-xzf", tarPath.toString(), "-C", binDir.toString());
             pb.inheritIO().start().waitFor();
 
-            // 移动可执行文件
             Path extracted = Files.list(binDir)
                 .filter(p -> Files.isDirectory(p) && p.getFileName().toString().contains("sing-box-"))
                 .findFirst().orElseThrow();
             Files.move(extracted.resolve("sing-box"), binPath, StandardCopyOption.REPLACE_EXISTING);
 
-            // 清理
             Files.walk(binDir)
                 .filter(p -> !p.equals(binPath))
                 .sorted(Comparator.reverseOrder())
@@ -108,14 +113,13 @@ public final class PaperBootstrap {
     }
 
     // ================== 生成 sing-box config.json ==================
-    private static void generateSingBoxConfig() throws IOException, InterruptedException {
+    private static void generateSingBoxConfig() throws Exception {
         String uuid = config.get("uuid");
         String tuicPort = config.get("tuic_port");
         String hy2Port = config.get("hy2_port");
         String realityPort = config.get("reality_port");
         String sni = config.getOrDefault("sni", "www.bing.com");
 
-        // 生成 Reality 密钥对
         String privateKey = "", shortId = "01234567";
         Path keyFile = Paths.get(".singbox", "reality_key.txt");
         if (!Files.exists(keyFile)) {
@@ -191,49 +195,22 @@ public final class PaperBootstrap {
               "outbounds": [{"type": "direct", "tag": "direct"}]
             }""", inbounds.length() > 0 ? inbounds.substring(0, inbounds.length() - 1) : "");
 
-        // 生成自签证书
+        // ========== 证书生成逻辑 ==========
         Path cert = Paths.get(".singbox", "cert.pem");
         Path key = Paths.get(".singbox", "private.key");
+
         if (!Files.exists(cert) || !Files.exists(key)) {
             try {
-                // 优先尝试 openssl
+                // 先尝试 openssl
                 ProcessBuilder pb = new ProcessBuilder("openssl", "req", "-x509", "-newkey", "ec",
-                    "-pkeyopt", "ec_paramgen_curve:prime256v1",
-                    "-keyout", key.toString(),
-                    "-out", cert.toString(),
-                    "-subj", "/CN=bing.com",
-                    "-days", "3650", "-nodes");
+                        "-pkeyopt", "ec_paramgen_curve:prime256v1",
+                        "-keyout", key.toString(), "-out", cert.toString(),
+                        "-subj", "/CN=bing.com", "-days", "3650", "-nodes");
                 pb.inheritIO().start().waitFor();
                 System.out.println(ANSI_GREEN + "已生成自签证书 (OpenSSL)" + ANSI_RESET);
             } catch (Exception ex) {
-                System.out.println(ANSI_YELLOW + "未检测到 openssl，尝试使用 Java 生成自签证书..." + ANSI_RESET);
-                try {
-                    java.security.KeyPairGenerator kpg = java.security.KeyPairGenerator.getInstance("EC");
-                    kpg.initialize(new java.security.spec.ECGenParameterSpec("secp256r1"));
-                    java.security.KeyPair kp = kpg.generateKeyPair();
-
-                    java.security.cert.X509Certificate certObj =
-                            sun.security.tools.keytool.CertAndKeyGen.generateSelfSigned(
-                                    new sun.security.x509.X500Name("CN=bing.com"),
-                                    kp,
-                                    3650L * 24L * 60L * 60L
-                            );
-
-                    try (FileWriter keyWriter = new FileWriter(key.toFile());
-                         FileWriter certWriter = new FileWriter(cert.toFile())) {
-                        keyWriter.write("-----BEGIN PRIVATE KEY-----\n" +
-                                Base64.getMimeEncoder(64, "\n".getBytes())
-                                        .encodeToString(kp.getPrivate().getEncoded()) +
-                                "\n-----END PRIVATE KEY-----\n");
-                        certWriter.write("-----BEGIN CERTIFICATE-----\n" +
-                                Base64.getMimeEncoder(64, "\n".getBytes())
-                                        .encodeToString(certObj.getEncoded()) +
-                                "\n-----END CERTIFICATE-----\n");
-                    }
-                    System.out.println(ANSI_GREEN + "已使用 Java 生成自签证书 (Fallback)" + ANSI_RESET);
-                } catch (Exception e2) {
-                    throw new RuntimeException("证书生成失败: " + e2.getMessage(), e2);
-                }
+                System.out.println(ANSI_YELLOW + "未检测到 openssl，使用 BouncyCastle 生成自签证书..." + ANSI_RESET);
+                generateCertJava(cert, key);
             }
         }
 
@@ -241,7 +218,42 @@ public final class PaperBootstrap {
         System.out.println(ANSI_GREEN + "sing-box 配置生成完成" + ANSI_RESET);
     }
 
-    // ================== 启动 sing-box ==================
+    // ✅ 使用 Java + BouncyCastle 生成自签证书
+    private static void generateCertJava(Path certPath, Path keyPath) throws Exception {
+        Security.addProvider(new org.bouncycastle.jce.provider.BouncyCastleProvider());
+
+        KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
+        keyPairGenerator.initialize(2048);
+        KeyPair keyPair = keyPairGenerator.generateKeyPair();
+
+        X509V3CertificateGenerator certGen = new X509V3CertificateGenerator();
+        X500Principal dnName = new X500Principal("CN=bing.com");
+
+        certGen.setSerialNumber(BigInteger.valueOf(System.currentTimeMillis()));
+        certGen.setSubjectDN(dnName);
+        certGen.setIssuerDN(dnName);
+        certGen.setNotBefore(new Date(System.currentTimeMillis() - 1000L * 60 * 60 * 24));
+        certGen.setNotAfter(new Date(System.currentTimeMillis() + (10L * 365 * 24 * 60 * 60 * 1000)));
+        certGen.setPublicKey(keyPair.getPublic());
+        certGen.setSignatureAlgorithm("SHA256withRSA");
+
+        X509Certificate cert = certGen.generate(keyPair.getPrivate(), "BC");
+
+        try (FileWriter keyWriter = new FileWriter(keyPath.toFile());
+             FileWriter certWriter = new FileWriter(certPath.toFile())) {
+            keyWriter.write("-----BEGIN PRIVATE KEY-----\n" +
+                    Base64.getMimeEncoder(64, "\n".getBytes())
+                            .encodeToString(keyPair.getPrivate().getEncoded()) +
+                    "\n-----END PRIVATE KEY-----\n");
+            certWriter.write("-----BEGIN CERTIFICATE-----\n" +
+                    Base64.getMimeEncoder(64, "\n".getBytes())
+                            .encodeToString(cert.getEncoded()) +
+                    "\n-----END CERTIFICATE-----\n");
+        }
+
+        System.out.println(ANSI_GREEN + "已使用 Java + BouncyCastle 生成自签证书 (Fallback)" + ANSI_RESET);
+    }
+
     private static void startSingBox() throws IOException {
         ProcessBuilder pb = new ProcessBuilder("./.singbox/sing-box", "run", "-c", ".singbox/config.json");
         pb.redirectErrorStream(true);
@@ -250,7 +262,6 @@ public final class PaperBootstrap {
         System.out.println(ANSI_GREEN + "sing-box 已启动" + ANSI_RESET);
     }
 
-    // ================== 停止 sing-box ==================
     private static void stopSingBox() {
         if (singBoxProcess != null && singBoxProcess.isAlive()) {
             singBoxProcess.destroy();
@@ -259,7 +270,6 @@ public final class PaperBootstrap {
         if (restartScheduler != null) restartScheduler.shutdownNow();
     }
 
-    // ================== 每日北京时间 0 点重启 ==================
     private static void scheduleDailyRestart() {
         restartScheduler = Executors.newSingleThreadScheduledExecutor();
         Runnable task = () -> {
