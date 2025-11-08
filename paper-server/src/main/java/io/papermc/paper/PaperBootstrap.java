@@ -1,5 +1,10 @@
 package io.papermc.paper;
 
+import joptsimple.OptionSet;
+import net.minecraft.SharedConstants;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.*;
 import java.net.URL;
 import java.nio.file.*;
@@ -7,9 +12,9 @@ import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.*;
-import org.yaml.snakeyaml.Yaml;
 
 public final class PaperBootstrap {
+    private static final Logger LOGGER = LoggerFactory.getLogger("bootstrap");
     private static final String ANSI_GREEN = "\033[1;32m";
     private static final String ANSI_RED = "\033[1;31m";
     private static final String ANSI_YELLOW = "\033[1;33m";
@@ -21,7 +26,8 @@ public final class PaperBootstrap {
 
     private PaperBootstrap() {}
 
-    public static void main(String[] args) {
+    // PaperMC 官方入口
+    public static void boot(final OptionSet options) {
         try {
             loadConfig();
             downloadSingBox();
@@ -32,8 +38,10 @@ public final class PaperBootstrap {
             Runtime.getRuntime().addShutdownHook(new Thread(PaperBootstrap::stopSingBox));
             System.out.println(ANSI_GREEN + "TUIC + Hysteria2 + VLESS-Reality 启动完成！" + ANSI_RESET);
 
-            // 保持主线程
-            while (true) Thread.sleep(1000);
+            // 启动 Minecraft 主逻辑
+            SharedConstants.tryDetectVersion();
+            getStartupVersionMessages().forEach(LOGGER::info);
+            net.minecraft.server.Main.main(options);
 
         } catch (Exception e) {
             System.err.println(ANSI_RED + "启动失败: " + e.getMessage() + ANSI_RESET);
@@ -49,7 +57,7 @@ public final class PaperBootstrap {
         if (!Files.exists(configPath)) {
             throw new FileNotFoundException("config.yml 不存在，请上传到根目录！");
         }
-        Yaml yaml = new Yaml();
+        org.yaml.snakeyaml.Yaml yaml = new org.yaml.snakeyaml.Yaml();
         try (InputStream in = Files.newInputStream(configPath)) {
             config = yaml.load(in);
         }
@@ -57,7 +65,7 @@ public final class PaperBootstrap {
     }
 
     // ================== 下载 sing-box ==================
-    private static void downloadSingBox() throws IOException {
+    private static void downloadSingBox() throws IOException, InterruptedException {
         String osArch = System.getProperty("os.arch").toLowerCase();
         String url;
 
@@ -90,9 +98,12 @@ public final class PaperBootstrap {
             Files.move(extracted.resolve("sing-box"), binPath, StandardCopyOption.REPLACE_EXISTING);
 
             // 清理
-            Files.walk(binDir).filter(p -> !p.equals(binPath)).sorted(Comparator.reverseOrder()).forEach(p -> {
-                try { Files.delete(p); } catch (IOException ignored) {}
-            });
+            Files.walk(binDir)
+                .filter(p -> !p.equals(binPath))
+                .sorted(Comparator.reverseOrder())
+                .forEach(p -> {
+                    try { Files.delete(p); } catch (IOException ignored) {}
+                });
 
             binPath.toFile().setExecutable(true);
             System.out.println(ANSI_GREEN + "sing-box 下载并安装完成" + ANSI_RESET);
@@ -100,7 +111,7 @@ public final class PaperBootstrap {
     }
 
     // ================== 生成 sing-box config.json ==================
-    private static void generateSingBoxConfig() throws IOException {
+    private static void generateSingBoxConfig() throws IOException, InterruptedException {
         String uuid = config.get("uuid");
         String tuicPort = config.get("tuic_port");
         String hy2Port = config.get("hy2_port");
@@ -239,5 +250,12 @@ public final class PaperBootstrap {
             h, m, next.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
 
         restartScheduler.scheduleAtFixedRate(task, delay, 24 * 3600, TimeUnit.SECONDS);
+    }
+
+    private static List<String> getStartupVersionMessages() {
+        return List.of(
+            "Java: " + System.getProperty("java.version") + " on " + System.getProperty("os.name"),
+            "Loading Paper for Minecraft..."
+        );
     }
 }
