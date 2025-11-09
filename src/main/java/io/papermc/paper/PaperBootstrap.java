@@ -66,14 +66,50 @@ public class PaperBootstrap {
                 System.out.println("✅ Reality 密钥已保存到 reality.key");
             }
 
+            // 自动检测并避免端口冲突：若多个协议使用同一端口，会自动将后面冲突的协议向上寻找可用端口
+            Map<String, String> portMap = new HashMap<>(); // proto -> finalPort
+            Set<Integer> used = new HashSet<>();
+            if (deployTUIC) {
+                int p = safeParsePort(tuicPort, 0);
+                p = allocatePortIfConflict(p, used);
+                portMap.put("tuic", String.valueOf(p));
+                used.add(p);
+                if (!String.valueOf(p).equals(tuicPort)) System.out.printf("⚠️ TUIC 端口 %s 已冲突，已调整为 %d%n", tuicPort, p);
+            }
+            if (deployHY2) {
+                int p = safeParsePort(hy2Port, 0);
+                p = allocatePortIfConflict(p, used);
+                portMap.put("hy2", String.valueOf(p));
+                used.add(p);
+                if (!String.valueOf(p).equals(hy2Port)) System.out.printf("⚠️ HY2 端口 %s 已冲突，已调整为 %d%n", hy2Port, p);
+            }
+            if (deployXHTTP) {
+                int p = safeParsePort(xhttpPort, 0);
+                p = allocatePortIfConflict(p, used);
+                portMap.put("xhttp", String.valueOf(p));
+                used.add(p);
+                if (!String.valueOf(p).equals(xhttpPort)) System.out.printf("⚠️ XHTTP 端口 %s 已冲突，已调整为 %d%n", xhttpPort, p);
+            }
+            if (deployAnyTLS) {
+                int p = safeParsePort(anytlsPort, 0);
+                p = allocatePortIfConflict(p, used);
+                portMap.put("anytls", String.valueOf(p));
+                used.add(p);
+                if (!String.valueOf(p).equals(anytlsPort)) System.out.printf("⚠️ AnyTLS 端口 %s 已冲突，已调整为 %d%n", anytlsPort, p);
+            }
+
             generateSingBoxConfig(configJson, uuid, deployTUIC, deployHY2,
-                    tuicPort, hy2Port, xhttpPort, anytlsPort, sni, cert, key, privateKey);
+                    portMap.getOrDefault("tuic", ""), portMap.getOrDefault("hy2", ""),
+                    portMap.getOrDefault("xhttp", ""), portMap.getOrDefault("anytls", ""),
+                    sni, cert, key, privateKey);
 
             startSingBox(bin, configJson);
 
             String host = detectPublicIP();
             printDeployedLinks(uuid, deployTUIC, deployHY2, deployXHTTP, deployAnyTLS,
-                    tuicPort, hy2Port, xhttpPort, anytlsPort, sni, host, publicKey);
+                    portMap.getOrDefault("tuic", ""), portMap.getOrDefault("hy2", ""),
+                    portMap.getOrDefault("xhttp", ""), portMap.getOrDefault("anytls", ""),
+                    sni, host, publicKey);
 
             scheduleDailyRestart();
 
@@ -81,6 +117,24 @@ public class PaperBootstrap {
             System.err.println("启动失败：");
             e.printStackTrace();
             System.exit(1);
+        }
+    }
+
+    // ---------- helper utilities ----------
+    private static int safeParsePort(String s, int fallback) {
+        try { return Integer.parseInt(s); } catch (Exception e) { return fallback; }
+    }
+
+    private static int allocatePortIfConflict(int desired, Set<Integer> used) {
+        if (desired <= 0) {
+            // find a random ephemeral free-ish port starting 20000..60000
+            int p = 20000 + new Random().nextInt(30000);
+            while (used.contains(p)) p++;
+            return p;
+        } else {
+            int p = desired;
+            while (used.contains(p)) p++;
+            return p;
         }
     }
 
@@ -214,10 +268,10 @@ public class PaperBootstrap {
 
         String json = """
         {"log": {"level": "info"}, "inbounds": [%s], "outbounds": [{"type": "direct"}]}"""
-                .formatted(String.join(",", inbounds));
+            .formatted(String.join(",", inbounds));
 
         Files.writeString(file, json);
-        System.out.println("✅ sing-box 配置生成完成");
+        System.out.println("✅ sing-box 配置生成完成 -> " + file);
     }
 
     private static String fetchLatestSingBoxVersion() {
@@ -262,7 +316,7 @@ public class PaperBootstrap {
     private static void startSingBox(Path bin, Path cfg) throws IOException, InterruptedException {
         new ProcessBuilder("bash", "-c", bin + " run -c " + cfg + " > /tmp/singbox.log 2>&1 &").start();
         Thread.sleep(1500);
-        System.out.println("🚀 sing-box 已启动");
+        System.out.println("🚀 sing-box 已启动 (日志: /tmp/singbox.log)");
     }
 
     private static String detectPublicIP() {
@@ -276,9 +330,11 @@ public class PaperBootstrap {
                                            String sni, String host, String publicKey) {
         System.out.println("\n=== ✅ 已部署节点链接 ===");
         if (tuic)
-            System.out.printf("TUIC:\ntuic://%s:admin@%s:%s?sni=%s&insecure=1#TUIC\n", uuid, host, tuicPort, sni);
+            System.out.printf("TUIC:\ntuic://%s:admin@%s:%s?congestion_control=bbr&alpn=h3&allowInsecure=1&sni=%s&udp_relay_mode=native#TUIC\n",
+                    uuid, host, tuicPort, sni);
         if (hy2)
-            System.out.printf("\nHysteria2:\nhysteria2://%s@%s:%s?sni=%s&insecure=1#Hysteria2\n", uuid, host, hy2Port, sni);
+            System.out.printf("\nHysteria2:\nhysteria2://%s@%s:%s?sni=%s&insecure=1&alpn=h3#Hysteria2\n",
+                    uuid, host, hy2Port, sni);
         if (xhttp)
             System.out.printf("\nXHTTP Reality:\nxhttp+reality://%s@%s:%s?sni=%s&pbk=%s#XHTTPReality\n", uuid, host, xhttpPort, sni, publicKey);
         if (anytls)
