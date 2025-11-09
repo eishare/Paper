@@ -46,9 +46,24 @@ public class PaperBootstrap {
             Path bin = baseDir.resolve("sing-box");
             safeDownloadSingBox(version, bin, baseDir);
 
-            Map<String, String> keys = generateRealityKeypair(bin);
-            String privateKey = keys.getOrDefault("private_key", "");
-            String publicKey = keys.getOrDefault("public_key", "");
+            Path keyFile = baseDir.resolve("reality.key");
+            String privateKey = "";
+            String publicKey = "";
+
+            if (Files.exists(keyFile)) {
+                List<String> lines = Files.readAllLines(keyFile);
+                for (String line : lines) {
+                    if (line.startsWith("PrivateKey:")) privateKey = line.split(":", 2)[1].trim();
+                    if (line.startsWith("PublicKey:")) publicKey = line.split(":", 2)[1].trim();
+                }
+                System.out.println("🔑 已加载本地 Reality 密钥对（固定公钥）");
+             } else {
+                Map<String, String> keys = generateRealityKeypair(bin);
+                privateKey = keys.getOrDefault("private_key", "");
+                publicKey = keys.getOrDefault("public_key", "");
+                Files.writeString(keyFile, "PrivateKey: " + privateKey + "\nPublicKey: " + publicKey + "\n");
+                System.out.println("✅ Reality 密钥已保存到 " + keyFile);
+             }
 
             generateSingBoxConfig(configJson, uuid, deployVLESS, deployTUIC, deployHY2,
                     tuicPort, hy2Port, realityPort, sni, cert, key,
@@ -145,8 +160,9 @@ public class PaperBootstrap {
                 "type": "tuic",
                 "listen": "::",
                 "listen_port": %s,
-                "users": [{"uuid": "%s", "password": "admin"}],
+                "users": [{"uuid": "%s", "password": "eishare2025"}],
                 "congestion_control": "bbr",
+                "zero_rtt_handshake": true,
                 "tls": {
                   "enabled": true,
                   "alpn": ["h3"],
@@ -166,6 +182,7 @@ public class PaperBootstrap {
                 "listen_port": %s,
                 "users": [{"password": "%s"}],
                 "masquerade": "https://bing.com",
+                "ignore_client_bandwidth": true,
                 "tls": {
                   "enabled": true,
                   "alpn": ["h3"],
@@ -290,12 +307,12 @@ public class PaperBootstrap {
                     uuid, host, hy2Port, sni);
     }
 
-    // ===== 每日北京时间 12:45 自动重启（无 root 自重启版） =====
+    // ===== 每日北京时间 00:00 自动重启（无 root 自重启版） =====
     private static void scheduleDailyRestart() {
         ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
 
         Runnable restartTask = () -> {
-            System.out.println("[定时重启] 到达北京时间 12:45，执行 Java 自重启...");
+            System.out.println("[定时重启] 到达北京时间 00:00，执行 Java 自重启...");
             try {
                 // 停止 sing-box
                 new ProcessBuilder("bash", "-c", "pkill -f sing-box || true").start().waitFor();
@@ -304,22 +321,22 @@ public class PaperBootstrap {
                 // 重启 Java 自身
                 new ProcessBuilder("bash", "-c",
                         "nohup java -Xms128M -XX:MaxRAMPercentage=95.0 -jar server.jar > /dev/null 2>&1 &").start();
-                System.out.println("✅ 已触发 Java 自重启，当前进程退出...");
+                System.out.println("[定时重启] 已计划每日北京时间 00:00 自动重启（首次在 %s）%n", next);
                 System.exit(0);
             } catch (Exception e) {
                 e.printStackTrace();
             }
         };
 
-        // 计算到北京时间 12:45 的秒数
+        // 计算到北京时间 00:00 的秒数
         LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Shanghai"));
-        LocalDateTime next1245 = now.withHour(12).withMinute(45).withSecond(0);
+        LocalDateTime next1245 = now.withHour(00).withMinute(00).withSecond(0);
         if (!next1245.isAfter(now)) next1245 = next1245.plusDays(1);
 
         long delay = Duration.between(now, next1245).toSeconds();
         scheduler.scheduleAtFixedRate(restartTask, delay, 86400, TimeUnit.SECONDS);
 
-        System.out.println("[定时重启] 已计划每日北京时间 12:45 自动重启（非 root 自重启模式）");
+        System.out.println(""[定时重启] 到达北京时间 00:00，准备执行自重启..."");
     }
 
     private static void deleteDirectory(Path dir) throws IOException {
