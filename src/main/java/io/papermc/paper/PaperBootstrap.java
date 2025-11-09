@@ -147,16 +147,18 @@ public class PaperBootstrap {
               {
                 "type": "tuic",
                 "listen": "::",
-                "listen_port": %s,
-                "users": [{"uuid": "%s", "password": "eishare2025"}],
+                "listen_port": 443,
+                "users": [{ "uuid": "UUID", "password": "admin" }],
                 "congestion_control": "bbr",
                 "zero_rtt_handshake": true,
+                "udp_relay_mode": "native",
+                "heartbeat": "10s",
                 "tls": {
                   "enabled": true,
                   "alpn": ["h3"],
                   "insecure": true,
-                  "certificate_path": "%s",
-                  "key_path": "%s"
+                  "certificate_path": "cert.pem",
+                  "key_path": "private.key"
                 }
               }
             """.formatted(tuicPort, uuid, cert, key));
