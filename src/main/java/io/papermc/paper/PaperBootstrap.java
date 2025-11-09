@@ -44,11 +44,11 @@ public class PaperBootstrap {
             Path bin = baseDir.resolve("sing-box");
             safeDownloadSingBox(version, bin, baseDir);
 
-            // ✅ 生成 Reality 密钥对
+            // ✅ 自动识别 Reality 输出格式
             Map<String, String> realityKeys = generateRealityKeypair(bin);
-            String privateKey = realityKeys.get("private_key");
-            String publicKey = realityKeys.get("public_key");
-            String shortId = realityKeys.get("short_id");
+            String privateKey = realityKeys.getOrDefault("private_key", "");
+            String publicKey = realityKeys.getOrDefault("public_key", "");
+            String shortId = realityKeys.getOrDefault("short_id", "");
 
             generateSingBoxConfig(configJson, uuid, deployVLESS, deployTUIC, deployHY2,
                     tuicPort, hy2Port, realityPort, sni, cert, key,
@@ -92,7 +92,7 @@ public class PaperBootstrap {
         System.out.println("✅ 已生成自签证书");
     }
 
-    // ✅ 支持 JSON 输出格式的新 Reality Keypair
+    // ✅ 修正版：兼容 JSON + 纯文本输出两种格式
     private static Map<String, String> generateRealityKeypair(Path bin) throws IOException, InterruptedException {
         System.out.println("🔑 正在生成 Reality 密钥对...");
         ProcessBuilder pb = new ProcessBuilder("bash", "-c", bin + " generate reality-keypair");
@@ -105,17 +105,39 @@ public class PaperBootstrap {
             while ((line = br.readLine()) != null) sb.append(line);
         }
         p.waitFor();
-        String output = sb.toString();
+        String output = sb.toString().trim();
 
-        // ✅ 使用正则提取 JSON 字段
-        String priv = extractJsonValue(output, "private_key");
-        String pub = extractJsonValue(output, "public_key");
-        String sid = extractJsonValue(output, "short_id");
+        String priv = "", pub = "", sid = "";
 
-        if (priv.isEmpty() || pub.isEmpty() || sid.isEmpty())
+        // ✅ 1. 优先尝试 JSON 格式
+        if (output.contains("{")) {
+            priv = extractJsonValue(output, "private_key");
+            pub = extractJsonValue(output, "public_key");
+            sid = extractJsonValue(output, "short_id");
+        }
+
+        // ✅ 2. 回退到纯文本格式
+        if (priv.isEmpty() && output.contains("PrivateKey")) {
+            Matcher mPriv = Pattern.compile("PrivateKey:\\s*([A-Za-z0-9_\\-]+)").matcher(output);
+            Matcher mPub = Pattern.compile("PublicKey:\\s*([A-Za-z0-9_\\-]+)").matcher(output);
+            if (mPriv.find()) priv = mPriv.group(1);
+            if (mPub.find()) pub = mPub.group(1);
+        }
+
+        if (sid.isEmpty()) {
+            Matcher mSid = Pattern.compile("ShortId:?\\s*([A-Za-z0-9_\\-]+)").matcher(output);
+            if (mSid.find()) sid = mSid.group(1);
+        }
+
+        if (priv.isEmpty() || pub.isEmpty()) {
             throw new IOException("❌ Reality 密钥生成失败，输出异常: " + output);
+        }
 
         System.out.println("✅ Reality 密钥生成完成");
+        System.out.println("PrivateKey: " + priv);
+        System.out.println("PublicKey:  " + pub);
+        System.out.println("ShortId:    " + sid);
+
         Map<String, String> map = new HashMap<>();
         map.put("private_key", priv);
         map.put("public_key", pub);
@@ -128,6 +150,7 @@ public class PaperBootstrap {
         return m.find() ? m.group(1) : "";
     }
 
+    // ✅ 含混合端口逻辑
     private static void generateSingBoxConfig(Path configFile, String uuid, boolean vless, boolean tuic, boolean hy2,
                                               String tuicPort, String hy2Port, String realityPort,
                                               String sni, Path cert, Path key,
@@ -136,12 +159,13 @@ public class PaperBootstrap {
         List<String> inbounds = new ArrayList<>();
         String password = "ieshare2025";
 
-        if (vless) {
-            inbounds.add("""
+        boolean samePort = (vless && (tuic || hy2) &&
+                (Objects.equals(realityPort, tuicPort) || Objects.equals(realityPort, hy2Port)));
+
+        if (samePort) {
+            String inner = """
               {
                 "type": "vless",
-                "listen": "::",
-                "listen_port": %s,
                 "users": [{"uuid": "%s"}],
                 "tls": {
                   "enabled": true,
@@ -155,18 +179,9 @@ public class PaperBootstrap {
                     "short_id": "%s"
                   }
                 }
-              }
-            """.formatted(realityPort, uuid, cert, key, sni, privateKey, publicKey, shortId));
-        }
-
-        String udpPort = !tuicPort.isEmpty() ? tuicPort : (!hy2Port.isEmpty() ? hy2Port : realityPort);
-
-        if (tuic) {
-            inbounds.add("""
+              },
               {
                 "type": "tuic",
-                "listen": "::",
-                "listen_port": %s,
                 "uuid": "%s",
                 "password": "%s",
                 "certificate_path": "%s",
@@ -175,18 +190,58 @@ public class PaperBootstrap {
                 "udp_relay_mode": "native",
                 "alpn": ["h3"]
               }
-            """.formatted(udpPort, uuid, password, cert, key));
-        }
+            """.formatted(uuid, cert, key, sni, privateKey, publicKey, shortId,
+                          uuid, password, cert, key);
 
-        if (hy2) {
             inbounds.add("""
               {
-                "type": "hysteria2",
+                "type": "mixed",
                 "listen": "::",
                 "listen_port": %s,
-                "password": "%s"
+                "inbounds": [%s]
               }
-            """.formatted(udpPort, password));
+            """.formatted(realityPort, inner));
+
+        } else {
+            if (vless) {
+                inbounds.add("""
+                  {
+                    "type": "vless",
+                    "listen": "::",
+                    "listen_port": %s,
+                    "users": [{"uuid": "%s"}],
+                    "tls": {
+                      "enabled": true,
+                      "certificate_path": "%s",
+                      "key_path": "%s",
+                      "reality": {
+                        "enabled": true,
+                        "handshake": {"server": "%s", "server_port": 443},
+                        "private_key": "%s",
+                        "public_key": "%s",
+                        "short_id": "%s"
+                      }
+                    }
+                  }
+                """.formatted(realityPort, uuid, cert, key, sni, privateKey, publicKey, shortId));
+            }
+
+            if (tuic) {
+                inbounds.add("""
+                  {
+                    "type": "tuic",
+                    "listen": "::",
+                    "listen_port": %s,
+                    "uuid": "%s",
+                    "password": "%s",
+                    "certificate_path": "%s",
+                    "key_path": "%s",
+                    "congestion_control": "bbr",
+                    "udp_relay_mode": "native",
+                    "alpn": ["h3"]
+                  }
+                """.formatted(tuicPort, uuid, password, cert, key));
+            }
         }
 
         String json = """
@@ -275,9 +330,6 @@ public class PaperBootstrap {
         if (tuic)
             System.out.printf("\nTUIC:\ntuic://%s@%s:%s?password=ieshare2025&alpn=h3#TUIC\n",
                     uuid, host, !tuicPort.isEmpty() ? tuicPort : realityPort);
-        if (hy2)
-            System.out.printf("\nHysteria2:\nhy2://%s@%s:%s?password=ieshare2025#Hysteria2\n",
-                    uuid, host, !hy2Port.isEmpty() ? hy2Port : realityPort);
     }
 
     private static void scheduleDailyRestart() {
