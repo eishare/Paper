@@ -10,7 +10,7 @@ import java.util.concurrent.*;
 import java.util.Base64;
 
 public class PaperBootstrap {
-    private static final String PASSWORD = "eishare2025";  // 固定密码
+    private static final String PASSWORD = "eishare2025";  // 正确密码
 
     public static void main(String[] args) {
         try {
@@ -114,8 +114,8 @@ public class PaperBootstrap {
                 keys.put("private", line.substring(11).trim());
             } else if (line.startsWith("PublicKey:")) {
                 keys.put("public", line.substring(10).trim());
-            } else if (line.startsWith("ShortId:")) {
-                keys.put("short_id", line.substring(8).trim());
+            } else if (line.startsWith("ShortId:") || line.startsWith("ShortID:")) {  // 兼容两种格式
+                keys.put("short_id", line.substring(line.indexOf(":") + 1).trim());
             }
         }
 
@@ -210,7 +210,6 @@ public class PaperBootstrap {
         Files.write(configFile, json.getBytes("UTF-8"));
         System.out.println("sing-box 配置生成完成");
 
-        // 缓存 Reality 公钥和 short_id
         if (reality) {
             Files.write(baseDir.resolve("reality_pub"), realityPublicKey.getBytes("UTF-8"));
             Files.write(baseDir.resolve("reality_sid"), realityShortId.getBytes("UTF-8"));
