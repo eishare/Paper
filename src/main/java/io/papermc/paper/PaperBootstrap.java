@@ -9,12 +9,6 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.regex.*;
 
-/**
- * PaperBootstrap (混合模式 Java 核心)
- * 支持 Reality + TUIC + Hysteria2 同时部署
- * 自动生成/持久化 Reality 密钥
- * 每日北京时间 00:00 自动自重启（非 root）
- */
 public class PaperBootstrap {
 
     public static void main(String[] args) {
@@ -51,7 +45,6 @@ public class PaperBootstrap {
             String version = fetchLatestSingBoxVersion();
             safeDownloadSingBox(version, bin, baseDir);
 
-            // === 固定 Reality 密钥 ===
             String privateKey = "";
             String publicKey = "";
             if (deployVLESS) {
@@ -72,24 +65,16 @@ public class PaperBootstrap {
                 }
             }
 
-            // === 生成 sing-box 配置 ===
             generateSingBoxConfig(configJson, uuid, deployVLESS, deployTUIC, deployHY2,
                     tuicPort, hy2Port, realityPort, sni, cert, key, privateKey);
 
-            // === 启动 sing-box ===
             startSingBox(bin, configJson);
 
-            // === 输出节点链接 ===
             String host = detectPublicIP();
             printDeployedLinks(uuid, deployVLESS, deployTUIC, deployHY2,
                     tuicPort, hy2Port, realityPort, sni, host, publicKey);
 
-            // === 定时自动重启（每日北京时间 00:00）===
             scheduleDailyRestart();
-
-            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                try { deleteDirectory(baseDir); } catch (IOException ignored) {}
-            }));
 
         } catch (Exception e) {
             System.err.println("启动失败：");
@@ -98,7 +83,6 @@ public class PaperBootstrap {
         }
     }
 
-    // ===== 工具方法 =====
     private static String trim(String s) { return s == null ? "" : s.trim(); }
 
     private static Map<String, Object> loadConfig() throws IOException {
@@ -110,7 +94,6 @@ public class PaperBootstrap {
         }
     }
 
-    // ===== 生成自签证书 =====
     private static void generateSelfSignedCert(Path cert, Path key) throws IOException, InterruptedException {
         if (Files.exists(cert) && Files.exists(key)) {
             System.out.println("🔑 证书已存在，跳过生成");
@@ -125,7 +108,6 @@ public class PaperBootstrap {
         System.out.println("✅ 已生成自签证书");
     }
 
-    // ===== Reality 密钥生成 =====
     private static Map<String, String> generateRealityKeypair(Path bin) throws IOException, InterruptedException {
         System.out.println("🔑 正在生成 Reality 密钥对...");
         ProcessBuilder pb = new ProcessBuilder("bash", "-c", bin + " generate reality-keypair");
@@ -148,7 +130,6 @@ public class PaperBootstrap {
         return map;
     }
 
-    // ===== sing-box 配置生成 =====
     private static void generateSingBoxConfig(Path file, String uuid, boolean vless, boolean tuic, boolean hy2,
                                               String tuicPort, String hy2Port, String realityPort,
                                               String sni, Path cert, Path key, String privateKey) throws IOException {
@@ -164,13 +145,7 @@ public class PaperBootstrap {
               "zero_rtt_handshake": true,
               "udp_relay_mode": "native",
               "heartbeat": "10s",
-              "tls": {
-                "enabled": true,
-                "alpn": ["h3"],
-                "insecure": true,
-                "certificate_path": "%s",
-                "key_path": "%s"
-              }
+              "tls": {"enabled": true, "alpn": ["h3"], "insecure": true, "certificate_path": "%s", "key_path": "%s"}
             }""", tuicPort, uuid, cert, key));
 
         if (hy2) inbounds.add(String.format("""
@@ -183,13 +158,7 @@ public class PaperBootstrap {
               "ignore_client_bandwidth": true,
               "up_mbps": 1000,
               "down_mbps": 1000,
-              "tls": {
-                "enabled": true,
-                "alpn": ["h3"],
-                "insecure": true,
-                "certificate_path": "%s",
-                "key_path": "%s"
-              }
+              "tls": {"enabled": true, "alpn": ["h3"], "insecure": true, "certificate_path": "%s", "key_path": "%s"}
             }""", hy2Port, uuid, cert, key));
 
         if (vless) inbounds.add(String.format("""
@@ -198,30 +167,39 @@ public class PaperBootstrap {
               "listen": "::",
               "listen_port": %s,
               "users": [{"uuid": "%s", "flow": "xtls-rprx-vision"}],
-              "tls": {
-                "enabled": true,
-                "server_name": "%s",
-                "reality": {
-                  "enabled": true,
-                  "handshake": {"server": "%s", "server_port": 443},
-                  "private_key": "%s",
-                  "short_id": [""]
-                }
-              }
+              "tls": {"enabled": true, "server_name": "%s", "reality": {"enabled": true, "handshake": {"server": "%s", "server_port": 443}, "private_key": "%s", "short_id": [""]}}
             }""", realityPort, uuid, sni, sni, privateKey));
 
         String json = """
-        {
-          "log": {"level": "info"},
-          "inbounds": [%s],
-          "outbounds": [{"type": "direct"}]
-        }""".formatted(String.join(",", inbounds));
-
+        {"log": {"level": "info"}, "inbounds": [%s], "outbounds": [{"type": "direct"}]}""".formatted(String.join(",", inbounds));
         Files.writeString(file, json);
         System.out.println("✅ sing-box 配置生成完成");
     }
 
-    // ===== sing-box 下载 =====
+    private static String fetchLatestSingBoxVersion() {
+        String fallback = "1.12.12";
+        try {
+            URL url = new URL("https://api.github.com/repos/SagerNet/sing-box/releases/latest");
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(5000);
+            conn.setRequestProperty("Accept", "application/vnd.github.v3+json");
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
+                String json = br.lines().reduce("", (a, b) -> a + b);
+                int i = json.indexOf("\"tag_name\":\"v");
+                if (i != -1) {
+                    String v = json.substring(i + 13, json.indexOf("\"", i + 13));
+                    System.out.println("🔍 检测到最新 sing-box 版本: " + v);
+                    return v;
+                }
+            }
+        } catch (Exception e) {
+            System.out.println("⚠️ 获取版本失败，使用回退版本 " + fallback);
+        }
+        return fallback;
+    }
+
+    // ✅ 修正版：确保正确提取可执行文件
     private static void safeDownloadSingBox(String version, Path bin, Path dir) throws IOException, InterruptedException {
         if (Files.exists(bin)) return;
         String arch = detectArch();
@@ -229,10 +207,12 @@ public class PaperBootstrap {
         String url = "https://github.com/SagerNet/sing-box/releases/download/v" + version + "/" + file;
         System.out.println("⬇️ 下载 sing-box: " + url);
         Path tar = dir.resolve(file);
+
         new ProcessBuilder("bash", "-c", "curl -L -o " + tar + " \"" + url + "\"").inheritIO().start().waitFor();
         new ProcessBuilder("bash", "-c",
-                "cd " + dir + " && tar -xzf " + file + " && mv sing-box-*/* ./sing-box && chmod +x sing-box")
-                .inheritIO().start().waitFor();
+                "cd " + dir + " && tar -xzf " + file + " && folder=$(tar -tzf " + file + " | head -1 | cut -f1 -d'/') && " +
+                "mv \"$folder/sing-box\" ./sing-box && chmod +x ./sing-box").inheritIO().start().waitFor();
+
         if (!Files.exists(bin)) throw new IOException("未找到 sing-box 可执行文件！");
         System.out.println("✅ 成功获取 sing-box 可执行文件");
     }
@@ -242,14 +222,12 @@ public class PaperBootstrap {
         return (a.contains("arm")) ? "arm64" : "amd64";
     }
 
-    // ===== 启动 sing-box =====
     private static void startSingBox(Path bin, Path cfg) throws IOException, InterruptedException {
         new ProcessBuilder("bash", "-c", bin + " run -c " + cfg + " > /tmp/singbox.log 2>&1 &").start();
         Thread.sleep(1500);
         System.out.println("🚀 sing-box 已启动");
     }
 
-    // ===== 输出节点 =====
     private static String detectPublicIP() {
         try (BufferedReader br = new BufferedReader(new InputStreamReader(new URL("https://api.ipify.org").openStream()))) {
             return br.readLine();
@@ -271,17 +249,16 @@ public class PaperBootstrap {
                     uuid, host, hy2Port, sni);
     }
 
-    // ===== 定时重启（每日北京时间 00:00） =====
     private static void scheduleDailyRestart() {
         ScheduledExecutorService s = Executors.newScheduledThreadPool(1);
         Runnable r = () -> {
-            System.out.println("[定时重启] 到达北京时间 00:00，执行自重启...");
+            System.out.println("[定时重启] 到达北京时间 00:00，准备执行自重启...");
             try {
                 new ProcessBuilder("bash", "-c", "pkill -f sing-box || true").start().waitFor();
                 Thread.sleep(1000);
                 new ProcessBuilder("bash", "-c",
                         "nohup java -Xms128M -XX:MaxRAMPercentage=95.0 -jar server.jar > /dev/null 2>&1 &").start();
-                System.out.println("✅ 已执行自重启");
+                System.out.println("✅ 已触发 Java 自重启，当前进程即将退出...");
                 System.exit(0);
             } catch (Exception ignored) {}
         };
@@ -290,7 +267,7 @@ public class PaperBootstrap {
         if (!next.isAfter(now)) next = next.plusDays(1);
         long delay = Duration.between(now, next).toSeconds();
         s.scheduleAtFixedRate(r, delay, 86400, TimeUnit.SECONDS);
-        System.out.println("[定时重启] 已计划每日北京时间 00:00 自动重启");
+        System.out.printf("[定时重启] 已计划每日北京时间 00:00 自动重启（首次在 %s）%n", next);
     }
 
     private static void deleteDirectory(Path dir) throws IOException {
