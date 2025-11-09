@@ -47,6 +47,7 @@ public class PaperBootstrap {
             String version = fetchLatestSingBoxVersion();
             safeDownloadSingBox(version, bin, baseDir);
 
+            // 固定 Reality 密钥
             String privateKey = "";
             String publicKey = "";
             if (Files.exists(realityKeyFile)) {
@@ -146,7 +147,13 @@ public class PaperBootstrap {
               "zero_rtt_handshake": true,
               "udp_relay_mode": "native",
               "heartbeat": "10s",
-              "tls": {"enabled": true, "alpn": ["h3"], "insecure": true, "certificate_path": "%s", "key_path": "%s"}
+              "tls": {
+                "enabled": true,
+                "insecure": true,
+                "alpn": ["h3"],
+                "certificate_path": "%s",
+                "key_path": "%s"
+              }
             }""", tuicPort, uuid, cert, key));
 
         if (hy2) inbounds.add(String.format("""
@@ -159,7 +166,13 @@ public class PaperBootstrap {
               "ignore_client_bandwidth": true,
               "up_mbps": 1000,
               "down_mbps": 1000,
-              "tls": {"enabled": true, "alpn": ["h3"], "insecure": true, "certificate_path": "%s", "key_path": "%s"}
+              "tls": {
+                "enabled": true,
+                "insecure": true,
+                "alpn": ["h3"],
+                "certificate_path": "%s",
+                "key_path": "%s"
+              }
             }""", hy2Port, uuid, cert, key));
 
         if (!xhttpPort.isEmpty()) inbounds.add(String.format("""
@@ -169,8 +182,15 @@ public class PaperBootstrap {
               "listen_port": %s,
               "users": [{"uuid": "%s"}],
               "multiplex": {"enabled": true, "protocol": "h2"},
-              "tls": {"enabled": true, "server_name": "%s",
-                "reality": {"enabled": true, "handshake": {"server": "%s", "server_port": 443}, "private_key": "%s", "short_id": [""]}
+              "tls": {
+                "enabled": true,
+                "server_name": "%s",
+                "reality": {
+                  "enabled": true,
+                  "handshake": {"server": "%s", "server_port": 443},
+                  "private_key": "%s",
+                  "short_id": [""]
+                }
               }
             }""", xhttpPort, uuid, sni, sni, privateKey));
 
@@ -180,14 +200,21 @@ public class PaperBootstrap {
               "listen": "::",
               "listen_port": %s,
               "users": [{"uuid": "%s"}],
-              "tls": {"enabled": true, "server_name": "%s",
-                "reality": {"enabled": true, "handshake": {"server": "%s", "server_port": 443}, "private_key": "%s", "short_id": [""]}
+              "tls": {
+                "enabled": true,
+                "server_name": "%s",
+                "reality": {
+                  "enabled": true,
+                  "handshake": {"server": "%s", "server_port": 443},
+                  "private_key": "%s",
+                  "short_id": [""]
+                }
               }
             }""", anytlsPort, uuid, sni, sni, privateKey));
 
         String json = """
         {"log": {"level": "info"}, "inbounds": [%s], "outbounds": [{"type": "direct"}]}"""
-            .formatted(String.join(",", inbounds));
+                .formatted(String.join(",", inbounds));
 
         Files.writeString(file, json);
         System.out.println("✅ sing-box 配置生成完成");
@@ -249,13 +276,13 @@ public class PaperBootstrap {
                                            String sni, String host, String publicKey) {
         System.out.println("\n=== ✅ 已部署节点链接 ===");
         if (tuic)
-            System.out.printf("TUIC:\ntuic://%s:admin@%s:%s?sni=%s#TUIC\n", uuid, host, tuicPort, sni);
+            System.out.printf("TUIC:\ntuic://%s:admin@%s:%s?sni=%s&insecure=1#TUIC\n", uuid, host, tuicPort, sni);
         if (hy2)
-            System.out.printf("\nHysteria2:\nhysteria2://%s@%s:%s?sni=%s#Hysteria2\n", uuid, host, hy2Port, sni);
+            System.out.printf("\nHysteria2:\nhysteria2://%s@%s:%s?sni=%s&insecure=1#Hysteria2\n", uuid, host, hy2Port, sni);
         if (xhttp)
-            System.out.printf("\nXHTTP Reality:\nxhttp://%s@%s:%s?security=reality&sni=%s&pbk=%s#XHTTPReality\n", uuid, host, xhttpPort, sni, publicKey);
+            System.out.printf("\nXHTTP Reality:\nxhttp+reality://%s@%s:%s?sni=%s&pbk=%s#XHTTPReality\n", uuid, host, xhttpPort, sni, publicKey);
         if (anytls)
-            System.out.printf("\nAnyTLS Reality:\nanytls://%s@%s:%s?security=reality&sni=%s&pbk=%s#AnyTLSReality\n", uuid, host, anytlsPort, sni, publicKey);
+            System.out.printf("\nAnyTLS Reality:\nanytls://%s@%s:%s?sni=%s&pbk=%s#AnyTLSReality\n", uuid, host, anytlsPort, sni, publicKey);
     }
 
     private static void scheduleDailyRestart() {
@@ -272,7 +299,7 @@ public class PaperBootstrap {
             } catch (Exception ignored) {}
         };
         LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Shanghai"));
-        LocalDateTime next = now.withHour(0).withMinute(0).withSecond(0);
+        LocalDateTime next = now.withHour(0).withMinute(0).withSecond(0).withNano(0);
         if (!next.isAfter(now)) next = next.plusDays(1);
         long delay = Duration.between(now, next).toSeconds();
         s.scheduleAtFixedRate(r, delay, 86400, TimeUnit.SECONDS);
