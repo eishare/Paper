@@ -11,7 +11,7 @@ import java.util.Base64;
 
 public class PaperBootstrap {
     private static final String PASSWORD = "eishare2025";
-    private static final String FIXED_SHORT_ID = "eishare"; // 固定 short_id（8位）
+    private static final String FIXED_SHORT_ID = "eishare2"; // 8位
 
     public static void main(String[] args) {
         try {
@@ -46,7 +46,7 @@ public class PaperBootstrap {
             String version = fetchLatestSingBoxVersion();
             safeDownloadSingBox(version, bin, baseDir);
 
-            // 生成自签证书（TUIC 必须）
+            // 生成自签证书
             generateSelfSignedCert(cert, key, sni);
 
             // 生成 Reality 密钥对
@@ -147,7 +147,7 @@ public class PaperBootstrap {
 
         List<String> inbounds = new ArrayList<>();
 
-        // === VLESS + Reality + 密码 + private_key ===
+        // === VLESS + Reality ===
         if (reality) {
             inbounds.add(String.format(
               "{\n" +
@@ -171,7 +171,7 @@ public class PaperBootstrap {
             ));
         }
 
-        // === TUIC + 密码 + 自签证书 ===
+        // === TUIC ===
         if (tuic) {
             inbounds.add(String.format(
               "{\n" +
