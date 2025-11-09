@@ -10,6 +10,7 @@ import java.util.concurrent.*;
 import java.util.regex.*;
 
 public class PaperBootstrap {
+
     public static void main(String[] args) {
         try {
             System.out.println("config.yml 加载中...");
@@ -26,6 +27,7 @@ public class PaperBootstrap {
             boolean deployVLESS = !realityPort.isEmpty();
             boolean deployTUIC = !tuicPort.isEmpty();
             boolean deployHY2 = !hy2Port.isEmpty();
+
             if (!deployVLESS && !deployTUIC && !deployHY2)
                 throw new RuntimeException("❌ 未设置任何协议端口！");
 
@@ -34,7 +36,7 @@ public class PaperBootstrap {
 
             Path configJson = baseDir.resolve("config.json");
             Path cert = baseDir.resolve("cert.pem");
-            Path key = baseDir.resolve("key.pem");
+            Path key = baseDir.resolve("private.key");
 
             System.out.println("✅ config.yml 加载成功");
 
@@ -44,21 +46,20 @@ public class PaperBootstrap {
             Path bin = baseDir.resolve("sing-box");
             safeDownloadSingBox(version, bin, baseDir);
 
-            // ✅ 自动识别 Reality 输出格式
-            Map<String, String> realityKeys = generateRealityKeypair(bin);
-            String privateKey = realityKeys.getOrDefault("private_key", "");
-            String publicKey = realityKeys.getOrDefault("public_key", "");
-            String shortId = realityKeys.getOrDefault("short_id", "");
+            Map<String, String> keys = generateRealityKeypair(bin);
+            String privateKey = keys.getOrDefault("private_key", "");
+            String publicKey = keys.getOrDefault("public_key", "");
 
             generateSingBoxConfig(configJson, uuid, deployVLESS, deployTUIC, deployHY2,
                     tuicPort, hy2Port, realityPort, sni, cert, key,
-                    privateKey, publicKey, shortId);
+                    privateKey, publicKey);
 
             startSingBox(bin, configJson);
 
             String host = detectPublicIP();
             printDeployedLinks(uuid, deployVLESS, deployTUIC, deployHY2,
                     tuicPort, hy2Port, realityPort, sni, host, publicKey);
+
             scheduleDailyRestart();
 
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -70,29 +71,33 @@ public class PaperBootstrap {
         }
     }
 
+    // ===== 基础方法 =====
     private static String trim(String s) { return s == null ? "" : s.trim(); }
 
     private static Map<String, Object> loadConfig() throws IOException {
         Yaml yaml = new Yaml();
         try (InputStream in = Files.newInputStream(Paths.get("config.yml"))) {
-            return yaml.load(in);
+            Object o = yaml.load(in);
+            if (o instanceof Map) return (Map<String, Object>) o;
+            return new HashMap<>();
         }
     }
 
+    // ===== 证书生成 =====
     private static void generateSelfSignedCert(Path cert, Path key) throws IOException, InterruptedException {
         if (Files.exists(cert) && Files.exists(key)) {
             System.out.println("🔑 证书已存在，跳过生成");
             return;
         }
-        System.out.println("🔨 正在生成自签证书...");
+        System.out.println("🔨 正在生成 EC 自签证书...");
         new ProcessBuilder("bash", "-c",
-                "openssl req -x509 -newkey rsa:2048 -keyout " + key + " -out " + cert +
-                        " -days 365 -nodes -subj '/CN=bing.com'")
+                "openssl ecparam -genkey -name prime256v1 -out " + key + " && " +
+                "openssl req -new -x509 -days 3650 -key " + key + " -out " + cert + " -subj '/CN=bing.com'")
                 .inheritIO().start().waitFor();
         System.out.println("✅ 已生成自签证书");
     }
 
-    // ✅ 修正版：兼容 JSON + 纯文本输出两种格式
+    // ===== Reality 密钥生成 =====
     private static Map<String, String> generateRealityKeypair(Path bin) throws IOException, InterruptedException {
         System.out.println("🔑 正在生成 Reality 密钥对...");
         ProcessBuilder pb = new ProcessBuilder("bash", "-c", bin + " generate reality-keypair");
@@ -102,146 +107,93 @@ public class PaperBootstrap {
         StringBuilder sb = new StringBuilder();
         try (BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
             String line;
-            while ((line = br.readLine()) != null) sb.append(line);
+            while ((line = br.readLine()) != null) sb.append(line).append("\n");
         }
         p.waitFor();
         String output = sb.toString().trim();
+        if (output.isEmpty()) throw new IOException("Reality keypair 生成失败（无输出）");
 
-        String priv = "", pub = "", sid = "";
+        Matcher privM = Pattern.compile("PrivateKey[:\\s]*([A-Za-z0-9_\\-+/=]+)").matcher(output);
+        Matcher pubM = Pattern.compile("PublicKey[:\\s]*([A-Za-z0-9_\\-+/=]+)").matcher(output);
+        String priv = privM.find() ? privM.group(1) : "";
+        String pub = pubM.find() ? pubM.group(1) : "";
 
-        // ✅ 1. 优先尝试 JSON 格式
-        if (output.contains("{")) {
-            priv = extractJsonValue(output, "private_key");
-            pub = extractJsonValue(output, "public_key");
-            sid = extractJsonValue(output, "short_id");
-        }
-
-        // ✅ 2. 回退到纯文本格式
-        if (priv.isEmpty() && output.contains("PrivateKey")) {
-            Matcher mPriv = Pattern.compile("PrivateKey:\\s*([A-Za-z0-9_\\-]+)").matcher(output);
-            Matcher mPub = Pattern.compile("PublicKey:\\s*([A-Za-z0-9_\\-]+)").matcher(output);
-            if (mPriv.find()) priv = mPriv.group(1);
-            if (mPub.find()) pub = mPub.group(1);
-        }
-
-        if (sid.isEmpty()) {
-            Matcher mSid = Pattern.compile("ShortId:?\\s*([A-Za-z0-9_\\-]+)").matcher(output);
-            if (mSid.find()) sid = mSid.group(1);
-        }
-
-        if (priv.isEmpty() || pub.isEmpty()) {
-            throw new IOException("❌ Reality 密钥生成失败，输出异常: " + output);
-        }
+        if (priv.isEmpty() || pub.isEmpty())
+            throw new IOException("无法解析 Reality 密钥输出：" + output);
 
         System.out.println("✅ Reality 密钥生成完成");
         System.out.println("PrivateKey: " + priv);
         System.out.println("PublicKey:  " + pub);
-        System.out.println("ShortId:    " + sid);
 
         Map<String, String> map = new HashMap<>();
         map.put("private_key", priv);
         map.put("public_key", pub);
-        map.put("short_id", sid);
         return map;
     }
 
-    private static String extractJsonValue(String json, String key) {
-        Matcher m = Pattern.compile("\"" + key + "\"\\s*:\\s*\"([^\"]+)\"").matcher(json);
-        return m.find() ? m.group(1) : "";
-    }
-
-    // ✅ 含混合端口逻辑
+    // ===== 配置生成 =====
     private static void generateSingBoxConfig(Path configFile, String uuid, boolean vless, boolean tuic, boolean hy2,
                                               String tuicPort, String hy2Port, String realityPort,
                                               String sni, Path cert, Path key,
-                                              String privateKey, String publicKey, String shortId) throws IOException {
+                                              String privateKey, String publicKey) throws IOException {
 
         List<String> inbounds = new ArrayList<>();
-        String password = "ieshare2025";
 
-        boolean samePort = (vless && (tuic || hy2) &&
-                (Objects.equals(realityPort, tuicPort) || Objects.equals(realityPort, hy2Port)));
-
-        if (samePort) {
-            String inner = """
+        if (tuic) {
+            inbounds.add("""
               {
-                "type": "vless",
-                "users": [{"uuid": "%s"}],
+                "type": "tuic",
+                "listen": "::",
+                "listen_port": %s,
+                "users": [{"uuid": "%s", "password": "admin"}],
+                "congestion_control": "bbr",
                 "tls": {
                   "enabled": true,
+                  "alpn": ["h3"],
                   "certificate_path": "%s",
-                  "key_path": "%s",
+                  "key_path": "%s"
+                }
+              }
+            """.formatted(tuicPort, uuid, cert, key));
+        }
+
+        if (hy2) {
+            inbounds.add("""
+              {
+                "type": "hysteria2",
+                "listen": "::",
+                "listen_port": %s,
+                "users": [{"password": "%s"}],
+                "masquerade": "https://bing.com",
+                "tls": {
+                  "enabled": true,
+                  "alpn": ["h3"],
+                  "certificate_path": "%s",
+                  "key_path": "%s"
+                }
+              }
+            """.formatted(hy2Port, uuid, cert, key));
+        }
+
+        if (vless) {
+            inbounds.add("""
+              {
+                "type": "vless",
+                "listen": "::",
+                "listen_port": %s,
+                "users": [{"uuid": "%s", "flow": "xtls-rprx-vision"}],
+                "tls": {
+                  "enabled": true,
+                  "server_name": "%s",
                   "reality": {
                     "enabled": true,
                     "handshake": {"server": "%s", "server_port": 443},
                     "private_key": "%s",
-                    "public_key": "%s",
-                    "short_id": "%s"
+                    "short_id": [""]
                   }
                 }
-              },
-              {
-                "type": "tuic",
-                "uuid": "%s",
-                "password": "%s",
-                "certificate_path": "%s",
-                "key_path": "%s",
-                "congestion_control": "bbr",
-                "udp_relay_mode": "native",
-                "alpn": ["h3"]
               }
-            """.formatted(uuid, cert, key, sni, privateKey, publicKey, shortId,
-                          uuid, password, cert, key);
-
-            inbounds.add("""
-              {
-                "type": "mixed",
-                "listen": "::",
-                "listen_port": %s,
-                "inbounds": [%s]
-              }
-            """.formatted(realityPort, inner));
-
-        } else {
-            if (vless) {
-                inbounds.add("""
-                  {
-                    "type": "vless",
-                    "listen": "::",
-                    "listen_port": %s,
-                    "users": [{"uuid": "%s"}],
-                    "tls": {
-                      "enabled": true,
-                      "certificate_path": "%s",
-                      "key_path": "%s",
-                      "reality": {
-                        "enabled": true,
-                        "handshake": {"server": "%s", "server_port": 443},
-                        "private_key": "%s",
-                        "public_key": "%s",
-                        "short_id": "%s"
-                      }
-                    }
-                  }
-                """.formatted(realityPort, uuid, cert, key, sni, privateKey, publicKey, shortId));
-            }
-
-            if (tuic) {
-                inbounds.add("""
-                  {
-                    "type": "tuic",
-                    "listen": "::",
-                    "listen_port": %s,
-                    "uuid": "%s",
-                    "password": "%s",
-                    "certificate_path": "%s",
-                    "key_path": "%s",
-                    "congestion_control": "bbr",
-                    "udp_relay_mode": "native",
-                    "alpn": ["h3"]
-                  }
-                """.formatted(tuicPort, uuid, password, cert, key));
-            }
+            """.formatted(realityPort, uuid, sni, sni, privateKey));
         }
 
         String json = """
@@ -256,6 +208,7 @@ public class PaperBootstrap {
         System.out.println("✅ sing-box 配置生成完成");
     }
 
+    // ===== 版本获取 =====
     private static String fetchLatestSingBoxVersion() {
         String fallback = "1.12.12";
         try {
@@ -279,6 +232,7 @@ public class PaperBootstrap {
         return fallback;
     }
 
+    // ===== 下载 sing-box =====
     private static void safeDownloadSingBox(String version, Path bin, Path dir) throws IOException, InterruptedException {
         if (Files.exists(bin)) return;
         String arch = detectArch();
@@ -287,12 +241,10 @@ public class PaperBootstrap {
 
         System.out.println("⬇️ 下载 sing-box: " + url);
         Path tar = dir.resolve(file);
-        new ProcessBuilder("bash", "-c", "curl -L -o " + tar + " " + url)
-                .inheritIO().start().waitFor();
-
+        new ProcessBuilder("bash", "-c", "curl -L -o " + tar + " \"" + url + "\"").inheritIO().start().waitFor();
         new ProcessBuilder("bash", "-c",
-                "cd " + dir + " && tar -xzf " + file + " && " +
-                        "(find . -type f -name 'sing-box' -exec mv {} ./sing-box \\; && chmod +x sing-box) && rm -rf sing-box-*")
+                "cd " + dir + " && tar -xzf " + file + " 2>/dev/null || true && " +
+                        "(find . -type f -name 'sing-box' -exec mv {} ./sing-box \\; ) && chmod +x sing-box || true")
                 .inheritIO().start().waitFor();
 
         if (!Files.exists(bin)) throw new IOException("未找到 sing-box 可执行文件！");
@@ -305,13 +257,14 @@ public class PaperBootstrap {
         return "amd64";
     }
 
+    // ===== 启动 =====
     private static void startSingBox(Path bin, Path cfg) throws IOException, InterruptedException {
-        new ProcessBuilder("bash", "-c", bin + " run -c " + cfg + " > /tmp/singbox.log 2>&1 &")
-                .inheritIO().start();
-        Thread.sleep(2000);
+        new ProcessBuilder("bash", "-c", bin + " run -c " + cfg + " > /tmp/singbox.log 2>&1 &").inheritIO().start();
+        Thread.sleep(1500);
         System.out.println("🚀 sing-box 已启动");
     }
 
+    // ===== 输出节点 =====
     private static String detectPublicIP() {
         try (BufferedReader br = new BufferedReader(new InputStreamReader(new URL("https://api.ipify.org").openStream()))) {
             return br.readLine();
@@ -325,13 +278,17 @@ public class PaperBootstrap {
                                            String sni, String host, String publicKey) {
         System.out.println("\n=== ✅ 已部署节点链接 ===");
         if (vless)
-            System.out.printf("VLESS Reality:\nvless://%s@%s:%s?encryption=none&security=reality&pbk=%s&sni=%s#Reality\n",
-                    uuid, host, realityPort, publicKey, sni);
+            System.out.printf("VLESS Reality:\nvless://%s@%s:%s?encryption=none&flow=xtls-rprx-vision&security=reality&sni=%s&fp=firefox&pbk=%s#Reality\n",
+                    uuid, host, realityPort, sni, publicKey);
         if (tuic)
-            System.out.printf("\nTUIC:\ntuic://%s@%s:%s?password=ieshare2025&alpn=h3#TUIC\n",
-                    uuid, host, !tuicPort.isEmpty() ? tuicPort : realityPort);
+            System.out.printf("\nTUIC:\ntuic://%s:admin@%s:%s?sni=%s&alpn=h3&congestion_control=bbr#TUIC\n",
+                    uuid, host, tuicPort, sni);
+        if (hy2)
+            System.out.printf("\nHysteria2:\nhysteria2://%s@%s:%s?sni=%s&insecure=1#Hysteria2\n",
+                    uuid, host, hy2Port, sni);
     }
 
+    // ===== 定时重启 =====
     private static void scheduleDailyRestart() {
         ScheduledExecutorService s = Executors.newScheduledThreadPool(1);
         Runnable r = () -> {
