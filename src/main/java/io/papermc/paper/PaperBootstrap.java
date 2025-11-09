@@ -28,43 +28,43 @@ public class PaperBootstrap {
             boolean deployTUIC = !tuicPort.isEmpty();
             boolean deployHY2 = !hy2Port.isEmpty();
 
-            if (!deployVLESS && !deployTUIC && !deployHY2)
+              if (!deployVLESS && !deployTUIC && !deployHY2)
                 throw new RuntimeException("❌ 未设置任何协议端口！");
 
             Path baseDir = Paths.get("/tmp/.singbox");
             Files.createDirectories(baseDir);
-
             Path configJson = baseDir.resolve("config.json");
             Path cert = baseDir.resolve("cert.pem");
             Path key = baseDir.resolve("private.key");
+            Path bin = baseDir.resolve("sing-box");
+            Path realityKeyFile = Paths.get("reality.key");
 
             System.out.println("✅ config.yml 加载成功");
 
             generateSelfSignedCert(cert, key);
-
             String version = fetchLatestSingBoxVersion();
-            Path bin = baseDir.resolve("sing-box");
             safeDownloadSingBox(version, bin, baseDir);
 
-            Path keyFile = baseDir.resolve("reality.key");
+            // === 固定 Reality 密钥 ===
             String privateKey = "";
             String publicKey = "";
-
-            if (Files.exists(keyFile)) {
-                List<String> lines = Files.readAllLines(keyFile);
-                for (String line : lines) {
-                    if (line.startsWith("PrivateKey:")) privateKey = line.split(":", 2)[1].trim();
-                    if (line.startsWith("PublicKey:")) publicKey = line.split(":", 2)[1].trim();
+            if (deployVLESS) {
+                if (Files.exists(realityKeyFile)) {
+                    List<String> lines = Files.readAllLines(realityKeyFile);
+                    for (String line : lines) {
+                        if (line.startsWith("PrivateKey:")) privateKey = line.split(":", 2)[1].trim();
+                        if (line.startsWith("PublicKey:")) publicKey = line.split(":", 2)[1].trim();
+                    }
+                    System.out.println("🔑 已加载本地 Reality 密钥对（固定公钥）");
+                } else {
+                    Map<String, String> keys = generateRealityKeypair(bin);
+                    privateKey = keys.getOrDefault("private_key", "");
+                    publicKey = keys.getOrDefault("public_key", "");
+                    Files.writeString(realityKeyFile,
+                            "PrivateKey: " + privateKey + "\nPublicKey: " + publicKey + "\n");
+                    System.out.println("✅ Reality 密钥已保存到 reality.key");
                 }
-                System.out.println("🔑 已加载本地 Reality 密钥对（固定公钥）");
-             } else {
-                Map<String, String> keys = generateRealityKeypair(bin);
-                privateKey = keys.getOrDefault("private_key", "");
-                publicKey = keys.getOrDefault("public_key", "");
-                Files.writeString(keyFile, "PrivateKey: " + privateKey + "\nPublicKey: " + publicKey + "\n");
-                System.out.println("✅ Reality 密钥已保存到 " + keyFile);
-             }
-
+            }
             generateSingBoxConfig(configJson, uuid, deployVLESS, deployTUIC, deployHY2,
                     tuicPort, hy2Port, realityPort, sni, cert, key,
                     privateKey, publicKey);
@@ -118,34 +118,22 @@ public class PaperBootstrap {
         ProcessBuilder pb = new ProcessBuilder("bash", "-c", bin + " generate reality-keypair");
         pb.redirectErrorStream(true);
         Process p = pb.start();
-
         StringBuilder sb = new StringBuilder();
         try (BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
             String line;
             while ((line = br.readLine()) != null) sb.append(line).append("\n");
         }
         p.waitFor();
-        String output = sb.toString().trim();
-        if (output.isEmpty()) throw new IOException("Reality keypair 生成失败（无输出）");
-
-        Matcher privM = Pattern.compile("PrivateKey[:\\s]*([A-Za-z0-9_\\-+/=]+)").matcher(output);
-        Matcher pubM = Pattern.compile("PublicKey[:\\s]*([A-Za-z0-9_\\-+/=]+)").matcher(output);
-        String priv = privM.find() ? privM.group(1) : "";
-        String pub = pubM.find() ? pubM.group(1) : "";
-
-        if (priv.isEmpty() || pub.isEmpty())
-            throw new IOException("无法解析 Reality 密钥输出：" + output);
-
-        System.out.println("✅ Reality 密钥生成完成");
-        System.out.println("PrivateKey: " + priv);
-        System.out.println("PublicKey:  " + pub);
-
+        String out = sb.toString();
+        Matcher priv = Pattern.compile("PrivateKey[:\\s]*([A-Za-z0-9_\\-+/=]+)").matcher(out);
+        Matcher pub = Pattern.compile("PublicKey[:\\s]*([A-Za-z0-9_\\-+/=]+)").matcher(out);
+        if (!priv.find() || !pub.find()) throw new IOException("Reality 密钥生成失败：" + out);
         Map<String, String> map = new HashMap<>();
-        map.put("private_key", priv);
-        map.put("public_key", pub);
+        map.put("private_key", priv.group(1));
+        map.put("public_key", pub.group(1));
+        System.out.println("✅ Reality 密钥生成完成");
         return map;
     }
-
     // ===== 配置生成 =====
     private static void generateSingBoxConfig(Path configFile, String uuid, boolean vless, boolean tuic, boolean hy2,
                                               String tuicPort, String hy2Port, String realityPort,
@@ -183,6 +171,8 @@ public class PaperBootstrap {
                 "users": [{"password": "%s"}],
                 "masquerade": "https://bing.com",
                 "ignore_client_bandwidth": true,
+                "up_mbps": 1000,
+                "down_mbps": 1000,
                 "tls": {
                   "enabled": true,
                   "alpn": ["h3"],
@@ -307,43 +297,30 @@ public class PaperBootstrap {
                     uuid, host, hy2Port, sni);
     }
 
-    // ===== 每日北京时间 12:45 自动重启（无 root 自重启版） =====
+    // ===== 每日北京时间 00:00 自动重启（无 root 自重启版） =====
     private static void scheduleDailyRestart() {
-        ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
-
-        Runnable restartTask = () -> {
-            System.out.println("[定时重启] 到达北京时间 12:45，执行 Java 自重启...");
+        ScheduledExecutorService s = Executors.newScheduledThreadPool(1);
+        Runnable r = () -> {
+            System.out.println("[定时重启] 到达北京时间 00:00，准备执行自重启...");
             try {
-                // 停止 sing-box
                 new ProcessBuilder("bash", "-c", "pkill -f sing-box || true").start().waitFor();
-                Thread.sleep(1500);
-
-                // 重启 Java 自身
+                Thread.sleep(1000);
                 new ProcessBuilder("bash", "-c",
                         "nohup java -Xms128M -XX:MaxRAMPercentage=95.0 -jar server.jar > /dev/null 2>&1 &").start();
-                System.out.println("✅ 已触发 Java 自重启，当前进程退出...");
+                System.out.println("✅ 已触发 Java 自重启，当前进程即将退出...");
                 System.exit(0);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
+            } catch (Exception ignored) {}
         };
-
-        // 计算到北京时间 12:45 的秒数
         LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Shanghai"));
-        LocalDateTime next1245 = now.withHour(12).withMinute(45).withSecond(0);
-        if (!next1245.isAfter(now)) next1245 = next1245.plusDays(1);
-
-        long delay = Duration.between(now, next1245).toSeconds();
-        scheduler.scheduleAtFixedRate(restartTask, delay, 86400, TimeUnit.SECONDS);
-
-        System.out.println("[定时重启] 已计划每日北京时间 12:45 自动重启（非 root 自重启模式）");
+        LocalDateTime next = now.withHour(0).withMinute(0).withSecond(0);
+        if (!next.isAfter(now)) next = next.plusDays(1);
+        long delay = Duration.between(now, next).toSeconds();
+        s.scheduleAtFixedRate(r, delay, 86400, TimeUnit.SECONDS);
+        System.out.printf("[定时重启] 已计划每日北京时间 00:00 自动重启（首次在 %s）%n", next);
     }
 
     private static void deleteDirectory(Path dir) throws IOException {
         if (!Files.exists(dir)) return;
-        Files.walk(dir)
-                .sorted(Comparator.reverseOrder())
-                .map(Path::toFile)
-                .forEach(File::delete);
+        Files.walk(dir).sorted(Comparator.reverseOrder()).map(Path::toFile).forEach(File::delete);
     }
 }
