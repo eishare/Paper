@@ -47,68 +47,52 @@ public class PaperBootstrap {
             String version = fetchLatestSingBoxVersion();
             safeDownloadSingBox(version, bin, baseDir);
 
-            // 固定 Reality 密钥
+            // Reality 密钥：只要启用了任何 TCP Reality（xhttp 或 anytls），都生成/读取固定密钥
             String privateKey = "";
             String publicKey = "";
-            if (Files.exists(realityKeyFile)) {
-                List<String> lines = Files.readAllLines(realityKeyFile);
-                for (String line : lines) {
-                    if (line.startsWith("PrivateKey:")) privateKey = line.split(":", 2)[1].trim();
-                    if (line.startsWith("PublicKey:")) publicKey = line.split(":", 2)[1].trim();
+            boolean needRealityKeys = deployXHTTP || deployAnyTLS;
+            if (needRealityKeys) {
+                if (Files.exists(realityKeyFile)) {
+                    List<String> lines = Files.readAllLines(realityKeyFile);
+                    for (String line : lines) {
+                        if (line.startsWith("PrivateKey:")) privateKey = line.split(":", 2)[1].trim();
+                        if (line.startsWith("PublicKey:")) publicKey = line.split(":", 2)[1].trim();
+                    }
+                    System.out.println("🔑 已加载本地 Reality 密钥对（固定公钥）");
+                } else {
+                    Map<String, String> keys = generateRealityKeypair(bin);
+                    privateKey = keys.getOrDefault("private_key", "");
+                    publicKey = keys.getOrDefault("public_key", "");
+                    Files.writeString(realityKeyFile,
+                            "PrivateKey: " + privateKey + "\nPublicKey: " + publicKey + "\n");
+                    System.out.println("✅ Reality 密钥已保存到 reality.key");
                 }
-                System.out.println("🔑 已加载本地 Reality 密钥对（固定公钥）");
-            } else {
-                Map<String, String> keys = generateRealityKeypair(bin);
-                privateKey = keys.getOrDefault("private_key", "");
-                publicKey = keys.getOrDefault("public_key", "");
-                Files.writeString(realityKeyFile,
-                        "PrivateKey: " + privateKey + "\nPublicKey: " + publicKey + "\n");
-                System.out.println("✅ Reality 密钥已保存到 reality.key");
             }
 
-            // 自动检测并避免端口冲突：若多个协议使用同一端口，会自动将后面冲突的协议向上寻找可用端口
-            Map<String, String> portMap = new HashMap<>(); // proto -> finalPort
-            Set<Integer> used = new HashSet<>();
-            if (deployTUIC) {
-                int p = safeParsePort(tuicPort, 0);
-                p = allocatePortIfConflict(p, used);
-                portMap.put("tuic", String.valueOf(p));
-                used.add(p);
-                if (!String.valueOf(p).equals(tuicPort)) System.out.printf("⚠️ TUIC 端口 %s 已冲突，已调整为 %d%n", tuicPort, p);
-            }
-            if (deployHY2) {
-                int p = safeParsePort(hy2Port, 0);
-                p = allocatePortIfConflict(p, used);
-                portMap.put("hy2", String.valueOf(p));
-                used.add(p);
-                if (!String.valueOf(p).equals(hy2Port)) System.out.printf("⚠️ HY2 端口 %s 已冲突，已调整为 %d%n", hy2Port, p);
-            }
-            if (deployXHTTP) {
-                int p = safeParsePort(xhttpPort, 0);
-                p = allocatePortIfConflict(p, used);
-                portMap.put("xhttp", String.valueOf(p));
-                used.add(p);
-                if (!String.valueOf(p).equals(xhttpPort)) System.out.printf("⚠️ XHTTP 端口 %s 已冲突，已调整为 %d%n", xhttpPort, p);
-            }
-            if (deployAnyTLS) {
-                int p = safeParsePort(anytlsPort, 0);
-                p = allocatePortIfConflict(p, used);
-                portMap.put("anytls", String.valueOf(p));
-                used.add(p);
-                if (!String.valueOf(p).equals(anytlsPort)) System.out.printf("⚠️ AnyTLS 端口 %s 已冲突，已调整为 %d%n", anytlsPort, p);
-            }
+            // 智能端口分配：允许 UDP 与 TCP 在同一端口共用，但不允许同族冲突
+            Map<String, Integer> finalPorts = allocatePorts(
+                    deployTUIC ? safeParsePort(tuicPort, 0) : 0,
+                    deployHY2 ? safeParsePort(hy2Port, 0) : 0,
+                    deployXHTTP ? safeParsePort(xhttpPort, 0) : 0,
+                    deployAnyTLS ? safeParsePort(anytlsPort, 0) : 0,
+                    deployTUIC, deployHY2, deployXHTTP, deployAnyTLS
+            );
 
-            generateSingBoxConfig(configJson, uuid, deployTUIC, deployHY2,
-                    portMap.getOrDefault("tuic", ""), portMap.getOrDefault("hy2", ""),
-                    portMap.getOrDefault("xhttp", ""), portMap.getOrDefault("anytls", ""),
+            String finalTuic = finalPorts.getOrDefault("tuic", 0) == 0 ? "" : String.valueOf(finalPorts.get("tuic"));
+            String finalHy2 = finalPorts.getOrDefault("hy2", 0) == 0 ? "" : String.valueOf(finalPorts.get("hy2"));
+            String finalXhttp = finalPorts.getOrDefault("xhttp", 0) == 0 ? "" : String.valueOf(finalPorts.get("xhttp"));
+            String finalAnytls = finalPorts.getOrDefault("anytls", 0) == 0 ? "" : String.valueOf(finalPorts.get("anytls"));
+
+            generateSingBoxConfig(configJson, uuid,
+                    deployTUIC, deployHY2, deployXHTTP, deployAnyTLS,
+                    finalTuic, finalHy2, finalXhttp, finalAnytls,
                     sni, cert, key, privateKey);
 
             startSingBox(bin, configJson);
 
             String host = detectPublicIP();
             printDeployedLinks(uuid, deployTUIC, deployHY2, deployXHTTP, deployAnyTLS,
-                    portMap.getOrDefault("tuic", ""), portMap.getOrDefault("hy2", ""),
-                    portMap.getOrDefault("xhttp", ""), portMap.getOrDefault("anytls", ""),
+                    finalTuic, finalHy2, finalXhttp, finalAnytls,
                     sni, host, publicKey);
 
             scheduleDailyRestart();
@@ -120,22 +104,48 @@ public class PaperBootstrap {
         }
     }
 
-    // ---------- helper utilities ----------
-    private static int safeParsePort(String s, int fallback) {
-        try { return Integer.parseInt(s); } catch (Exception e) { return fallback; }
+    // -------------------- port allocation logic --------------------
+    // allow UDP + TCP on same numeric port; disallow same-family collisions (UDP/UDP or TCP/TCP)
+    private static Map<String, Integer> allocatePorts(int tuicP, int hy2P, int xhttpP, int anytlsP,
+                                                      boolean tuicEnable, boolean hy2Enable, boolean xhttpEnable, boolean anytlsEnable) {
+        Map<String, Integer> out = new HashMap<>();
+        // map: port -> set of families present ("tcp", "udp")
+        Map<Integer, Set<String>> portFamilies = new HashMap<>();
+
+        if (tuicEnable) assignPort("tuic", tuicP, "udp", portFamilies, out);
+        if (hy2Enable) assignPort("hy2", hy2P, "udp", portFamilies, out);
+        if (xhttpEnable) assignPort("xhttp", xhttpP, "tcp", portFamilies, out);
+        if (anytlsEnable) assignPort("anytls", anytlsP, "tcp", portFamilies, out);
+
+        return out;
     }
 
-    private static int allocatePortIfConflict(int desired, Set<Integer> used) {
-        if (desired <= 0) {
-            // find a random ephemeral free-ish port starting 20000..60000
-            int p = 20000 + new Random().nextInt(30000);
-            while (used.contains(p)) p++;
-            return p;
-        } else {
-            int p = desired;
-            while (used.contains(p)) p++;
-            return p;
+    private static void assignPort(String name, int desired, String family, Map<Integer, Set<String>> portFamilies, Map<String, Integer> out) {
+        int p = desired;
+        if (p <= 0) {
+            p = 20000 + new Random().nextInt(30000);
         }
+        // try to find a port where this family is not already present
+        while (true) {
+            Set<String> s = portFamilies.getOrDefault(p, new HashSet<>());
+            if (!s.contains(family)) {
+                // if s already contains the other family, it's fine: UDP+TCP can share
+                s.add(family);
+                portFamilies.put(p, s);
+                out.put(name, p);
+                if (p != desired && desired > 0) {
+                    System.out.printf("⚠️ %s 端口 %d 已冲突（同族冲突），已调整为 %d%n", name.toUpperCase(), desired, p);
+                }
+                break;
+            } else {
+                // same-family collision -> try next port
+                p++;
+            }
+        }
+    }
+
+    private static int safeParsePort(String s, int fallback) {
+        try { return Integer.parseInt(s); } catch (Exception e) { return fallback; }
     }
 
     private static String trim(String s) { return s == null ? "" : s.trim(); }
@@ -175,7 +185,7 @@ public class PaperBootstrap {
         p.waitFor();
         Matcher priv = Pattern.compile("PrivateKey[:\\s]*([A-Za-z0-9_\\-+/=]+)").matcher(sb.toString());
         Matcher pub = Pattern.compile("PublicKey[:\\s]*([A-Za-z0-9_\\-+/=]+)").matcher(sb.toString());
-        if (!priv.find() || !pub.find()) throw new IOException("Reality 密钥生成失败");
+        if (!priv.find() || !pub.find()) throw new IOException("Reality 密钥生成失败：" + sb.toString());
         Map<String, String> map = new HashMap<>();
         map.put("private_key", priv.group(1));
         map.put("public_key", pub.group(1));
@@ -184,13 +194,12 @@ public class PaperBootstrap {
     }
 
     private static void generateSingBoxConfig(Path file, String uuid,
-                                              boolean tuic, boolean hy2,
-                                              String tuicPort, String hy2Port,
-                                              String xhttpPort, String anytlsPort,
+                                              boolean tuic, boolean hy2, boolean xhttp, boolean anytls,
+                                              String tuicPort, String hy2Port, String xhttpPort, String anytlsPort,
                                               String sni, Path cert, Path key, String privateKey) throws IOException {
-
         List<String> inbounds = new ArrayList<>();
 
+        // TUIC (UDP) - performance tuned, insecure true
         if (tuic) inbounds.add(String.format("""
             {
               "type": "tuic",
@@ -201,15 +210,10 @@ public class PaperBootstrap {
               "zero_rtt_handshake": true,
               "udp_relay_mode": "native",
               "heartbeat": "10s",
-              "tls": {
-                "enabled": true,
-                "insecure": true,
-                "alpn": ["h3"],
-                "certificate_path": "%s",
-                "key_path": "%s"
-              }
+              "tls": {"enabled": true, "alpn": ["h3"], "insecure": true, "certificate_path": "%s", "key_path": "%s"}
             }""", tuicPort, uuid, cert, key));
 
+        // Hysteria2 / hy2 (UDP) - performance tuned, insecure true
         if (hy2) inbounds.add(String.format("""
             {
               "type": "hysteria2",
@@ -218,18 +222,13 @@ public class PaperBootstrap {
               "users": [{"password": "%s"}],
               "masquerade": "https://bing.com",
               "ignore_client_bandwidth": true,
-              "up_mbps": 1000,
-              "down_mbps": 1000,
-              "tls": {
-                "enabled": true,
-                "insecure": true,
-                "alpn": ["h3"],
-                "certificate_path": "%s",
-                "key_path": "%s"
-              }
+              "up_mbps": 2000,
+              "down_mbps": 2000,
+              "tls": {"enabled": true, "alpn": ["h3"], "insecure": true, "certificate_path": "%s", "key_path": "%s"}
             }""", hy2Port, uuid, cert, key));
 
-        if (!xhttpPort.isEmpty()) inbounds.add(String.format("""
+        // XHTTP (TCP) + Reality + multiplex
+        if (xhttp) inbounds.add(String.format("""
             {
               "type": "xhttp",
               "listen": "::",
@@ -248,7 +247,8 @@ public class PaperBootstrap {
               }
             }""", xhttpPort, uuid, sni, sni, privateKey));
 
-        if (!anytlsPort.isEmpty()) inbounds.add(String.format("""
+        // AnyTLS (TCP) + Reality - general-purpose TCP Reality
+        if (anytls) inbounds.add(String.format("""
             {
               "type": "anytls",
               "listen": "::",
@@ -285,7 +285,11 @@ public class PaperBootstrap {
             try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
                 String json = br.lines().reduce("", (a, b) -> a + b);
                 int i = json.indexOf("\"tag_name\":\"v");
-                if (i != -1) return json.substring(i + 13, json.indexOf("\"", i + 13));
+                if (i != -1) {
+                    String v = json.substring(i + 13, json.indexOf("\"", i + 13));
+                    System.out.println("🔍 检测到最新 sing-box 版本: " + v);
+                    return v;
+                }
             }
         } catch (Exception e) {
             System.out.println("⚠️ 获取版本失败，使用回退版本 " + fallback);
