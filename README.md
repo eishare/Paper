@@ -1,17 +1,14 @@
-Paper [![Paper Build Status](https://img.shields.io/github/actions/workflow/status/PaperMC/Paper/build.yml?branch=main)](https://github.com/PaperMC/Paper/actions)
-[![Discord](https://img.shields.io/discord/289587909051416579.svg?label=&logo=discord&logoColor=ffffff&color=7389D8&labelColor=6A7EC2)](https://discord.gg/papermc)
-[![GitHub Sponsors](https://img.shields.io/github/sponsors/papermc?label=GitHub%20Sponsors)](https://github.com/sponsors/PaperMC)
-[![Open Collective](https://img.shields.io/opencollective/all/papermc?label=OpenCollective%20Sponsors)](https://opencollective.com/papermc)
-===========
+### Java-Paper更新说明：
 
-### paper项目更新中，会有较大精简，请静待。。。
+* Java 启动器 + Sing-box 多协议内核伪装方案
+* 设置每日零时自动重启服务器，避免内存溢出停机
+* 精简化：去除哪吒、argo隧道；保留3种协议：tuic、hy2、vless+reality
+* TCP/UDP端口可共用
+* 
+* 特性：Singbox内核+Minecraft伪装
 
-1：fork本项目
+1：下载Release中的Server.jar
 
-2：在Actions菜单允许 `I understand my workflows, go ahead and enable them` 按钮
+2：下载主页config.yml，手动编辑uuid，输入tuic/hy2端口
 
-3：在`paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java`文件里 95到111 中添加需要的环境变量，不需要的留空，保存后Actions会自动构建
-
-* [🎯 一键直达：PaperBootstrap.java](./paper-server/src/main/java/io/papermc/paper/PaperBootstrap.java)
-
-4：等待7分钟左右，在右侧的Release里下载server.jar文件
+3：上传至File、开机
