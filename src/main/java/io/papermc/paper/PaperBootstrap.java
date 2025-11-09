@@ -26,9 +26,14 @@ public class PaperBootstrap {
 
             if (uuid.isEmpty()) throw new RuntimeException("uuid 未设置！");
 
-            boolean deployReality = !realityPort.isEmpty();
-            boolean deployTUIC = !tuicPort.isEmpty();
-            boolean deployHY2 = !hy2Port.isEmpty();
+            // 强制分离端口
+            String realityPortFinal = realityPort.isEmpty() ? "443" : realityPort;
+            String tuicPortFinal = tuicPort.isEmpty() ? "8443" : tuicPort;
+            String hy2PortFinal = hy2Port.isEmpty() ? "8443" : hy2Port;
+
+            boolean deployReality = !realityPortFinal.isEmpty();
+            boolean deployTUIC = !tuicPortFinal.isEmpty();
+            boolean deployHY2 = !hy2PortFinal.isEmpty();
 
             if (!deployReality && !deployTUIC && !deployHY2) {
                 throw new RuntimeException("未设置任何协议端口！");
@@ -46,7 +51,7 @@ public class PaperBootstrap {
             String version = fetchLatestSingBoxVersion();
             safeDownloadSingBox(version, bin, baseDir);
 
-            // 生成自签证书
+            // 生成自签证书（TUIC 必须）
             generateSelfSignedCert(cert, key, sni);
 
             // 生成 Reality 密钥对
@@ -60,9 +65,7 @@ public class PaperBootstrap {
 
             generateSingBoxConfig(
                     configJson, uuid, deployReality, deployTUIC, deployHY2,
-                    tuicPort.isEmpty() ? realityPort : tuicPort,
-                    hy2Port.isEmpty() ? realityPort : hy2Port,
-                    realityPort, sni, cert, key, privateKey
+                    tuicPortFinal, hy2PortFinal, realityPortFinal, sni, cert, key, privateKey
             );
 
             startSingBox(bin, configJson);
@@ -71,7 +74,7 @@ public class PaperBootstrap {
 
             printDeployedLinks(
                     uuid, deployReality, deployTUIC, deployHY2,
-                    tuicPort, hy2Port, realityPort, sni, host, publicKey
+                    tuicPortFinal, hy2PortFinal, realityPortFinal, sni, host, publicKey
             );
 
             scheduleDailyRestart();
@@ -147,7 +150,7 @@ public class PaperBootstrap {
 
         List<String> inbounds = new ArrayList<>();
 
-        // === VLESS + Reality ===
+        // === VLESS + Reality (TCP) ===
         if (reality) {
             inbounds.add(String.format(
               "{\n" +
@@ -155,6 +158,7 @@ public class PaperBootstrap {
               "  \"tag\": \"vless-in\",\n" +
               "  \"listen\": \"::\",\n" +
               "  \"listen_port\": %s,\n" +
+              "  \"sniff\": true,\n" +
               "  \"users\": [{\"uuid\": \"%s\", \"password\": \"%s\"}],\n" +
               "  \"tls\": {\n" +
               "    \"enabled\": true,\n" +
@@ -171,7 +175,7 @@ public class PaperBootstrap {
             ));
         }
 
-        // === TUIC ===
+        // === TUIC (UDP) ===
         if (tuic) {
             inbounds.add(String.format(
               "{\n" +
@@ -192,7 +196,7 @@ public class PaperBootstrap {
             ));
         }
 
-        // === Hysteria2 ===
+        // === Hysteria2 (UDP) ===
         if (hy2) {
             inbounds.add(String.format(
               "{\n" +
@@ -296,23 +300,21 @@ public class PaperBootstrap {
         System.out.println("\n=== 已部署节点链接 ===");
 
         if (reality) {
-            System.out.printf("VLESS Reality:\nvless://%s@%s:%s?encryption=none&security=reality&password=%s&sni=%s&fp=chrome&pbk=%s&sid=%s&type=tcp#Reality\n",
+            System.out.printf("VLESS Reality (TCP):\nvless://%s@%s:%s?encryption=none&security=reality&password=%s&sni=%s&fp=chrome&pbk=%s&sid=%s&type=tcp#Reality-TCP\n",
                     uuid, host, realityPort, PASSWORD, sni, publicKey, FIXED_SHORT_ID);
         }
 
         if (tuic) {
             String auth = uuid + ":" + PASSWORD;
             String encoded = Base64.getUrlEncoder().withoutPadding().encodeToString(auth.getBytes());
-            String port = tuicPort.isEmpty() ? realityPort : tuicPort;
-            System.out.printf("\nTUIC:\ntuic://%s@%s:%s?alpn=h3&congestion_control=bbr#TUIC\n",
-                    encoded, host, port);
+            System.out.printf("\nTUIC (UDP):\ntuic://%s@%s:%s?alpn=h3&congestion_control=bbr#TUIC-UDP\n",
+                    encoded, host, tuicPort);
         }
 
         if (hy2) {
             String encoded = Base64.getUrlEncoder().withoutPadding().encodeToString(PASSWORD.getBytes());
-            String port = hy2Port.isEmpty() ? realityPort : hy2Port;
-            System.out.printf("\nHysteria2:\nhy2://%s@%s:%s?#Hysteria2\n",
-                    encoded, host, port);
+            System.out.printf("\nHysteria2 (UDP):\nhy2://%s@%s:%s?#Hysteria2-UDP\n",
+                    encoded, host, hy2Port);
         }
     }
 
