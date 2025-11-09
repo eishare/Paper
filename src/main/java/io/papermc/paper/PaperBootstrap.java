@@ -150,15 +150,15 @@ public class PaperBootstrap {
                   "listen_port": %s,
                   "users": [{"uuid": "%s", "password": "eishare2025"}],
                   "congestion_control": "bbr",
-                  "udp_relay_mode": "quic",
                   "tls": {
                     "enabled": true,
                     "alpn": ["h3"],
+                    "insecure": true,
                     "certificate_path": "%s",
                     "key_path": "%s"
                  }
                }
-               """.formatted(tuicPort, uuid, cert.toString(), key.toString()));
+               """.formatted(tuicPort, uuid, cert));
         }
 
         if (hy2) {
