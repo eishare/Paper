@@ -2,6 +2,5 @@
 uuid: ""                       #输入uuid
 tuic_port: ""                  #输入端口=确认部署
 hy2_port: ""                   #输入端口=确认部署
-reality_port: ""               #输入端口=确认部署
+reality_port: ""               #输入端口=确认部署 tcp/udp可共用端口
 sni: "www.bing.com"
-UDP/TCP可共用端口
