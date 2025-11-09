@@ -143,22 +143,22 @@ public class PaperBootstrap {
         List<String> inbounds = new ArrayList<>();
 
         if (tuic) {
-            inbounds.add("""
-              {
-                "type": "tuic",
-                "listen": "::",
-                "listen_port": 443,
-                "users": [{ "uuid": "UUID", "password": "eishare2025" }],
-                "congestion_control": "bbr",
-                "udp_relay_mode": "quic",
-                "tls": {
-                  "enabled": true,
-                  "alpn": ["h3"],
-                  "certificate_path": "%s",
-                  "key_path": "%s"
-                }
-              }
-            """.formatted(tuicPort, uuid, cert, key));
+            inbounds.add(String.format("""
+                {
+                  "type": "tuic",
+                  "listen": "::",
+                  "listen_port": %s,
+                  "users": [{"uuid": "%s", "password": "eishare2025"}],
+                  "congestion_control": "bbr",
+                  "udp_relay_mode": "quic",
+                  "tls": {
+                    "enabled": true,
+                    "alpn": ["h3"],
+                    "certificate_path": "%s",
+                    "key_path": "%s"
+                 }
+               }
+               """, tuicPort, uuid, cert.toString(), key.toString()));
         }
 
         if (hy2) {
