@@ -48,23 +48,25 @@ public class PaperBootstrap {
             String version = fetchLatestSingBoxVersion();
             safeDownloadSingBox(version, bin, baseDir);
 
-            // 2. 生成证书（与 Bash 一致）
+            // 2. 生成固定证书（与 Bash 一致）
             generateFixedCert(cert, key);
 
-            // 3. Reality 密钥（与 Bash 一致）
+            // 3. Reality 密钥（固定）
             String privateKey = "", publicKey = "";
             if (deployReality) {
                 if (Files.exists(realityKeyFile)) {
                     List<String> lines = Files.readAllLines(realityKeyFile);
                     for (String line : lines) {
-                        if (line.contains("PrivateKey:")) privateKey = line.split(":")[1].trim();
-                        if (line.contains("PublicKey:")) publicKey = line.split(":")[1].trim();
+                        if (line.contains("PrivateKey:")) privateKey = line.split(":", 2)[1].trim();
+                        if (line.contains("PublicKey:")) publicKey = line.split(":", 2)[1].trim();
                     }
+                    System.out.println("已加载固定 Reality 密钥对");
                 } else {
                     Map<String, String> keys = generateRealityKeypair(bin);
                     privateKey = keys.get("private");
                     publicKey = keys.get("public");
                     Files.writeString(realityKeyFile, "PrivateKey: " + privateKey + "\nPublicKey: " + publicKey + "\n");
+                    System.out.println("已生成并保存 Reality 密钥");
                 }
             }
 
@@ -83,7 +85,7 @@ public class PaperBootstrap {
             scheduleJavaRestart();
 
             // 8. 阻塞主线程（关键！）
-            System.out.println("按 Ctrl+C 退出，节点将继续运行");
+            System.out.println("按 Ctrl+C 退出，节点将继续后台运行");
             Thread.sleep(Long.MAX_VALUE);
 
         } catch (Exception e) {
@@ -93,7 +95,7 @@ public class PaperBootstrap {
         }
     }
 
-    // === 解析双引号 ===
+    // === 解析双引号字符串 ===
     private static String parseString(Object obj) {
         if (obj == null) return "";
         String s = obj.toString().trim();
@@ -120,7 +122,7 @@ public class PaperBootstrap {
         }
     }
 
-    // === 固定证书（与 Bash 一致）===
+    // === 固定证书（与 Bash 完全一致）===
     private static void generateFixedCert(Path cert, Path key) throws IOException {
         if (Files.exists(cert) && Files.exists(key)) return;
 
@@ -169,6 +171,7 @@ public class PaperBootstrap {
                 "find . -name 'sing-box' -type f -exec mv {} ./sing-box \\; && " +
                 "chmod +x ./sing-box")
                 .inheritIO().start().waitFor();
+        if (!Files.exists(bin)) throw new IOException("sing-box 解压失败！");
     }
 
     private static String detectArch() {
@@ -192,7 +195,7 @@ public class PaperBootstrap {
         return map;
     }
 
-    // === 生成配置（完全对标 Bash）===
+    // === 生成配置（完全对标 Bash，含 alpn/h3 + short_id + fingerprint）===
     private static void generateSingBoxConfig(Path file, String uuid,
                                               boolean tuic, boolean hy2, boolean reality,
                                               int tuicPort, int hy2Port, int realityPort,
@@ -242,7 +245,8 @@ public class PaperBootstrap {
                   "enabled": true,
                   "handshake": {"server": "www.nazhumi.com", "server_port": 443},
                   "private_key": "%s",
-                  "short_id": [""]
+                  "short_id": [""],
+                  "fingerprint": "firefox"
                 }
               }
             }""", realityPort, uuid, privateKey));
@@ -251,7 +255,7 @@ public class PaperBootstrap {
             {"log": {"disabled": true}, "inbounds": [%s], "outbounds": [{"type": "direct"}]}"""
             .formatted(String.join(",", inbounds));
         Files.writeString(file, json);
-        System.out.println("sing-box 配置生成完成");
+        System.out.println("sing-box 配置生成完成（含 alpn=h3、short_id、fingerprint）");
     }
 
     private static void startSingBox(Path bin, Path cfg) throws IOException, InterruptedException {
@@ -268,7 +272,7 @@ public class PaperBootstrap {
         }
     }
 
-    // === 输出链接（与 Bash 一致）===
+    // === 输出链接（与 Bash 完全一致）===
     private static void printDeployedLinks(String uuid, String host, int tuic, int hy2, int reality, String pbk) {
         System.out.println("\n=== 部署成功 ===");
         if (tuic > 0) System.out.printf("tuic://%s:admin@%s:%d?sni=www.bing.com&alpn=h3&congestion_control=bbr&allowInsecure=1#TUIC\n", uuid, host, tuic);
