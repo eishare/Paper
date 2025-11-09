@@ -1,5 +1,6 @@
 ### Java-Paper更新说明：
 
+* 无需fork本项目
 * Java 启动器 + Sing-box 多协议内核伪装方案
 * 设置每日零时自动重启服务器，避免内存溢出停机
 * 精简化：去除哪吒、argo隧道；保留3种协议：tuic、hy2、vless+reality
