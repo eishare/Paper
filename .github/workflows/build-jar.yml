@@ -1,11 +1,12 @@
-name: Build Server Jar
+name: Build and Release Server Jar
 
 on:
   push:
     branches: ["main"]
-  pull_request:
-    branches: ["main"]
   workflow_dispatch:
+
+permissions:
+  contents: write   # ✅ 必须允许发布 Release
 
 jobs:
   build:
@@ -27,11 +28,20 @@ jobs:
       - name: Build fatJar
         run: ./gradlew clean fatJar --no-daemon
 
-      - name: List built files (debug)
+      - name: List built files
         run: ls -lh build/libs
 
-      - name: Upload server.jar
+      - name: Upload artifact to Actions
         uses: actions/upload-artifact@v4
         with:
           name: server-jar
           path: build/libs/server.jar
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: "Auto Build #${{ github.run_number }}"
+          files: build/libs/server.jar
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
