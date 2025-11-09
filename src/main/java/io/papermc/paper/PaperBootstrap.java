@@ -10,7 +10,7 @@ import java.util.concurrent.*;
 import java.util.Base64;
 
 public class PaperBootstrap {
-    private static final String PASSWORD = "eishare2025";  // 固定密码
+    private static final String PASSWORD = "eishare2025";
 
     public static void main(String[] args) {
         try {
@@ -37,11 +37,22 @@ public class PaperBootstrap {
             Files.createDirectories(baseDir);
             Path configJson = baseDir.resolve("config.json");
             Path bin = baseDir.resolve("sing-box");
+            Path cert = baseDir.resolve("fullchain.pem");
+            Path key = baseDir.resolve("privkey.pem");
 
             System.out.println("config.yml 加载成功");
 
             String version = fetchLatestSingBoxVersion();
             safeDownloadSingBox(version, bin, baseDir);
+
+            // 生成自签证书（TUIC 必须）
+            generateSelfSignedCert(cert, key, sni);
+
+            // 生成 Reality 密钥对（Reality 必须）
+            Map<String, String> realityKeys = generateRealityKeys(bin);
+            String privateKey = realityKeys.get("private");
+            String publicKey = realityKeys.get("public");
+            String shortId = realityKeys.get("short_id");
 
             // 确保可执行
             new ProcessBuilder("bash", "-c", "chmod +x " + bin.toString())
@@ -51,7 +62,7 @@ public class PaperBootstrap {
                     configJson, uuid, deployReality, deployTUIC, deployHY2,
                     tuicPort.isEmpty() ? realityPort : tuicPort,
                     hy2Port.isEmpty() ? realityPort : hy2Port,
-                    realityPort, sni
+                    realityPort, sni, cert, key, privateKey, shortId
             );
 
             startSingBox(bin, configJson);
@@ -60,7 +71,8 @@ public class PaperBootstrap {
 
             printDeployedLinks(
                     uuid, deployReality, deployTUIC, deployHY2,
-                    tuicPort, hy2Port, realityPort, sni, host
+                    tuicPort, hy2Port, realityPort, sni, host,
+                    publicKey, shortId
             );
 
             scheduleDailyRestart();
@@ -84,15 +96,57 @@ public class PaperBootstrap {
         }
     }
 
+    private static void generateSelfSignedCert(Path cert, Path key, String sni) throws IOException, InterruptedException {
+        System.out.println("生成自签证书...");
+        new ProcessBuilder("bash", "-c",
+                "openssl req -x509 -nodes -days 365 -newkey rsa:2048 " +
+                        "-keyout " + key + " -out " + cert + " " +
+                        "-subj \"/CN=" + sni + "\"")
+                .inheritIO().start().waitFor();
+        System.out.println("证书生成完成");
+    }
+
+    private static Map<String, String> generateRealityKeys(Path singBoxBin) throws IOException, InterruptedException {
+        System.out.println("生成 Reality 密钥对...");
+        ProcessBuilder pb = new ProcessBuilder(singBoxBin.toString(), "generate", "reality-keypair");
+        pb.redirectErrorStream(true);
+        Process p = pb.start();
+
+        StringBuilder output = new StringBuilder();
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
+            String line;
+            while ((line = br.readLine()) != null) output.append(line).append("\n");
+        }
+
+        int exitCode = p.waitFor();
+        String outputStr = output.toString().trim();
+
+        if (exitCode != 0 || outputStr.isEmpty()) {
+            throw new RuntimeException("Reality 密钥生成失败！");
+        }
+
+        Map<String, String> keys = new HashMap<>();
+        for (String line : outputStr.split("\n")) {
+            if (line.startsWith("PrivateKey:")) keys.put("private", line.substring(11).trim());
+            if (line.startsWith("PublicKey:"))  keys.put("public", line.substring(10).trim());
+            if (line.contains("Short"))         keys.put("short_id", line.substring(line.indexOf(":") + 1).trim());
+        }
+
+        if (keys.size() != 3) throw new RuntimeException("Reality 密钥解析失败！输出: " + outputStr);
+        System.out.println("Reality 密钥生成成功");
+        return keys;
+    }
+
     private static void generateSingBoxConfig(
             Path configFile, String uuid,
             boolean reality, boolean tuic, boolean hy2,
-            String tuicPort, String hy2Port, String realityPort, String sni
+            String tuicPort, String hy2Port, String realityPort,
+            String sni, Path cert, Path key, String privateKey, String shortId
     ) throws IOException {
 
         List<String> inbounds = new ArrayList<>();
 
-        // === VLESS + Reality + 密码认证（无需密钥）===
+        // === VLESS + Reality + 密码 + 密钥 ===
         if (reality) {
             inbounds.add(String.format(
               "{\n" +
@@ -106,15 +160,17 @@ public class PaperBootstrap {
               "    \"server_name\": \"%s\",\n" +
               "    \"reality\": {\n" +
               "      \"enabled\": true,\n" +
-              "      \"handshake\": {\"server\": \"%s\", \"server_port\": 443}\n" +
+              "      \"handshake\": {\"server\": \"%s\", \"server_port\": 443},\n" +
+              "      \"private_key\": \"%s\",\n" +
+              "      \"short_id\": [\"%s\"]\n" +
               "    }\n" +
               "  }\n" +
               "}",
-              realityPort, uuid, PASSWORD, sni, sni
+              realityPort, uuid, PASSWORD, sni, sni, privateKey, shortId
             ));
         }
 
-        // === TUIC + 密码认证（无需证书）===
+        // === TUIC + 密码 + 自签证书 ===
         if (tuic) {
             inbounds.add(String.format(
               "{\n" +
@@ -125,10 +181,12 @@ public class PaperBootstrap {
               "  \"users\": [{\"uuid\": \"%s\", \"password\": \"%s\"}],\n" +
               "  \"congestion_control\": \"bbr\",\n" +
               "  \"alpn\": [\"h3\"],\n" +
-              "  \"udp_relay_mode\": \"native\",\n" +
-              "  \"disable_sni\": true\n" +
+              "  \"certificate\": \"%s\",\n" +
+              "  \"private_key\": \"%s\"\n" +
               "}",
-              tuicPort, uuid, PASSWORD
+              tuicPort, uuid, PASSWORD,
+              cert.toString().replace("\\", "\\\\"),
+              key.toString().replace("\\", "\\\\")
             ));
         }
 
@@ -140,9 +198,7 @@ public class PaperBootstrap {
               "  \"tag\": \"hy2-in\",\n" +
               "  \"listen\": \"::\",\n" +
               "  \"listen_port\": %s,\n" +
-              "  \"password\": \"%s\",\n" +
-              "  \"up_mbps\": 100,\n" +
-              "  \"down_mbps\": 100\n" +
+              "  \"password\": \"%s\"\n" +
               "}",
               hy2Port, PASSWORD
             ));
@@ -160,6 +216,9 @@ public class PaperBootstrap {
         Files.write(configFile, json.getBytes("UTF-8"));
         System.out.println("sing-box 配置生成完成");
     }
+
+    // 其余方法保持不变（fetchLatestSingBoxVersion, safeDownloadSingBox, startSingBox, printDeployedLinks 等）
+    // 为了节省篇幅，省略相同部分，直接复制你之前的代码即可
 
     private static String fetchLatestSingBoxVersion() {
         String fallback = "1.12.12";
@@ -233,13 +292,13 @@ public class PaperBootstrap {
     private static void printDeployedLinks(
             String uuid, boolean reality, boolean tuic, boolean hy2,
             String tuicPort, String hy2Port, String realityPort,
-            String sni, String host
+            String sni, String host, String publicKey, String shortId
     ) {
         System.out.println("\n=== 已部署节点链接 ===");
 
         if (reality) {
-            System.out.printf("VLESS Reality:\nvless://%s@%s:%s?encryption=none&security=reality&password=%s&sni=%s&fp=chrome&type=tcp#Reality\n",
-                    uuid, host, realityPort, PASSWORD, sni);
+            System.out.printf("VLESS Reality:\nvless://%s@%s:%s?encryption=none&security=reality&password=%s&sni=%s&fp=chrome&pbk=%s&sid=%s&type=tcp#Reality\n",
+                    uuid, host, realityPort, PASSWORD, sni, publicKey, shortId);
         }
 
         if (tuic) {
