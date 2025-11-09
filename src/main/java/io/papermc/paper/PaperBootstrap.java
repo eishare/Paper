@@ -144,20 +144,20 @@ public class PaperBootstrap {
 
         if (tuic) {
             inbounds.add("""
-                {
-                  "type": "tuic",
-                  "listen": "::",
-                  "listen_port": %s,
-                  "users": [{"uuid": "%s", "password": "eishare2025"}],
-                  "congestion_control": "bbr",
-                  "tls": {
-                    "enabled": true,
-                    "alpn": ["h3"],
-                    "certificate_path": "%s",
-                    "key_path": "%s"
-                 }
-               }
-               """.formatted(tuicPort, uuid, cert));
+              {
+                "type": "tuic",
+                "listen": "::",
+                "listen_port": %s,
+                "users": [{"uuid": "%s", "password": "eishare2025"}],
+                "congestion_control": "bbr",
+                "tls": {
+                  "enabled": true,
+                  "alpn": ["h3"],
+                  "certificate_path": "%s",
+                  "key_path": "%s"
+                }
+              }
+            """.formatted(tuicPort, uuid, cert, key));
         }
 
         if (hy2) {
