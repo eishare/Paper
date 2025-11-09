@@ -43,18 +43,10 @@ public class PaperBootstrap {
             String version = fetchLatestSingBoxVersion();
             safeDownloadSingBox(version, bin, baseDir);
 
-            // 确保可执行权限
-            Files.setPosixFilePermissions(bin, Set.of(
-                    PosixFilePermission.OWNER_READ,
-                    PosixFilePermission.OWNER_WRITE,
-                    PosixFilePermission.OWNER_EXECUTE,
-                    PosixFilePermission.GROUP_READ,
-                    PosixFilePermission.GROUP_EXECUTE,
-                    PosixFilePermission.OTHERS_READ,
-                    PosixFilePermission.OTHERS_EXECUTE
-            ));
+            // 使用 shell 命令确保可执行权限（兼容 Java 8）
+            new ProcessBuilder("bash", "-c", "chmod +x " + bin.toString())
+                    .inheritIO().start().waitFor();
 
-            // 生成配置
             generateSingBoxConfig(
                     configJson, bin, uuid, deployReality, deployTUIC, deployHY2,
                     tuicPort, hy2Port, realityPort, sni
@@ -92,27 +84,32 @@ public class PaperBootstrap {
 
     private static Map<String, String> generateRealityKeys(Path singBoxBin) throws IOException, InterruptedException {
         System.out.println("生成 Reality 密钥对...");
-        if (!Files.isExecutable(singBoxBin)) {
-            throw new IOException("sing-box 无执行权限！");
-        }
 
         ProcessBuilder pb = new ProcessBuilder(singBoxBin.toString(), "generate", "reality-keypair");
         pb.redirectErrorStream(true);
         Process p = pb.start();
 
-        String output = new String(p.getInputStream().readAllBytes(), "UTF-8").trim();
-        int exitCode = p.waitFor();
+        StringBuilder output = new StringBuilder();
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                output.append(line).append("\n");
+            }
+        }
 
-        if (exitCode != 0 || output.isEmpty()) {
-            System.err.println("sing-box 命令执行失败，exitCode=" + exitCode);
-            System.err.println("命令输出: " + output);
+        int exitCode = p.waitFor();
+        String outputStr = output.toString().trim();
+
+        if (exitCode != 0 || outputStr.isEmpty()) {
+            System.err.println("sing-box 命令失败，exitCode=" + exitCode);
+            System.err.println("输出: " + outputStr);
             throw new RuntimeException("sing-box generate reality-keypair 失败！");
         }
 
-        System.out.println("sing-box 输出:\n" + output);
+        System.out.println("sing-box 输出:\n" + outputStr);
 
         Map<String, String> keys = new HashMap<>();
-        for (String line : output.lines()) {
+        for (String line : outputStr.split("\n")) {
             if (line.startsWith("PrivateKey:")) {
                 keys.put("private", line.substring(11).trim());
             } else if (line.startsWith("PublicKey:")) {
@@ -146,73 +143,76 @@ public class PaperBootstrap {
             realityPublicKey = keys.get("public");
             realityShortId = keys.get("short_id");
 
-            inbounds.add("""
-              {
-                "type": "vless",
-                "tag": "vless-in",
-                "listen": "::",
-                "listen_port": %s,
-                "users": [{"uuid": "%s", "flow": "xtls-rprx-vision"}],
-                "tls": {
-                  "enabled": true,
-                  "server_name": "%s",
-                  "reality": {
-                    "enabled": true,
-                    "handshake": {"server": "%s", "server_port": 443},
-                    "private_key": "%s",
-                    "short_id": ["%s"]
-                  }
-                }
-              }
-              """.formatted(realityPort, uuid, sni, sni, privateKey, realityShortId));
+            inbounds.add(String.format(
+              "{\n" +
+              "  \"type\": \"vless\",\n" +
+              "  \"tag\": \"vless-in\",\n" +
+              "  \"listen\": \"::\",\n" +
+              "  \"listen_port\": %s,\n" +
+              "  \"users\": [{\"uuid\": \"%s\", \"flow\": \"xtls-rprx-vision\"}],\n" +
+              "  \"tls\": {\n" +
+              "    \"enabled\": true,\n" +
+              "    \"server_name\": \"%s\",\n" +
+              "    \"reality\": {\n" +
+              "      \"enabled\": true,\n" +
+              "      \"handshake\": {\"server\": \"%s\", \"server_port\": 443},\n" +
+              "      \"private_key\": \"%s\",\n" +
+              "      \"short_id\": [\"%s\"]\n" +
+              "    }\n" +
+              "  }\n" +
+              "}",
+              realityPort, uuid, sni, sni, privateKey, realityShortId
+            ));
         }
 
         String tuicListenPort = tuicPort.isEmpty() ? realityPort : tuicPort;
         if (tuic && !tuicListenPort.isEmpty()) {
-            inbounds.add("""
-              {
-                "type": "tuic",
-                "tag": "tuic-in",
-                "listen": "::",
-                "listen_port": %s,
-                "users": [{"uuid": "%s", "password": "%s"}],
-                "congestion_control": "bbr",
-                "alpn": ["h3"],
-                "udp_relay_mode": "native"
-              }
-              """.formatted(tuicListenPort, uuid, PASSWORD));
+            inbounds.add(String.format(
+              "{\n" +
+              "  \"type\": \"tuic\",\n" +
+              "  \"tag\": \"tuic-in\",\n" +
+              "  \"listen\": \"::\",\n" +
+              "  \"listen_port\": %s,\n" +
+              "  \"users\": [{\"uuid\": \"%s\", \"password\": \"%s\"}],\n" +
+              "  \"congestion_control\": \"bbr\",\n" +
+              "  \"alpn\": [\"h3\"],\n" +
+              "  \"udp_relay_mode\": \"native\"\n" +
+              "}",
+              tuicListenPort, uuid, PASSWORD
+            ));
         }
 
         String hy2ListenPort = hy2Port.isEmpty() ? realityPort : hy2Port;
         if (hy2 && !hy2ListenPort.isEmpty()) {
-            inbounds.add("""
-              {
-                "type": "hysteria2",
-                "tag": "hy2-in",
-                "listen": "::",
-                "listen_port": %s,
-                "password": "%s",
-                "up_mbps": 100,
-                "down_mbps": 100
-              }
-              """.formatted(hy2ListenPort, PASSWORD));
+            inbounds.add(String.format(
+              "{\n" +
+              "  \"type\": \"hysteria2\",\n" +
+              "  \"tag\": \"hy2-in\",\n" +
+              "  \"listen\": \"::\",\n" +
+              "  \"listen_port\": %s,\n" +
+              "  \"password\": \"%s\",\n" +
+              "  \"up_mbps\": 100,\n" +
+              "  \"down_mbps\": 100\n" +
+              "}",
+              hy2ListenPort, PASSWORD
+            ));
         }
 
-        String json = """
-        {
-          "log": {"level": "info"},
-          "inbounds": [%s],
-          "outbounds": [{"type": "direct"}]
-        }
-        """.formatted(String.join(", ", inbounds));
+        String json = String.format(
+            "{\n" +
+            "  \"log\": {\"level\": \"info\"},\n" +
+            "  \"inbounds\": [%s],\n" +
+            "  \"outbounds\": [{\"type\": \"direct\"}]\n" +
+            "}",
+            String.join(", ", inbounds)
+        );
 
-        Files.writeString(configFile, json);
+        Files.write(configFile, json.getBytes());
         System.out.println("sing-box 配置生成完成");
 
-        // 缓存公钥用于链接输出
         if (reality) {
-            Files.writeString(configFile.getParent().resolve("reality_pub"), realityPublicKey);
-            Files.writeString(configFile.getParent().resolve("reality_sid"), realityShortId);
+            Files.write(baseDir.resolve("reality_pub"), realityPublicKey.getBytes());
+            Files.write(baseDir.resolve("reality_sid"), realityShortId.getBytes());
         }
     }
 
@@ -225,7 +225,9 @@ public class PaperBootstrap {
             conn.setReadTimeout(5000);
             conn.setRequestProperty("Accept", "application/vnd.github.v3+json");
             try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
-                String json = br.lines().reduce("", String::concat);
+                StringBuilder json = new StringBuilder();
+                String line;
+                while ((line = br.readLine()) != null) json.append(line);
                 int i = json.indexOf("\"tag_name\":\"v");
                 if (i != -1) {
                     String v = json.substring(i + 13, json.indexOf("\"", i + 13));
@@ -240,8 +242,8 @@ public class PaperBootstrap {
     }
 
     private static void safeDownloadSingBox(String version, Path bin, Path dir) throws IOException, InterruptedException {
-        if (Files.exists(bin) && Files.isExecutable(bin)) {
-            System.out.println("sing-box 已存在且可执行，跳过下载");
+        if (Files.exists(bin)) {
+            System.out.println("sing-box 已存在，跳过下载");
             return;
         }
 
@@ -256,7 +258,7 @@ public class PaperBootstrap {
 
         new ProcessBuilder("bash", "-c",
                 "cd " + dir + " && tar -xzf " + file + " && " +
-                        "find . -type f -name 'sing-box' -exec mv {} sing-box \\; && chmod +x sing-box && rm -rf sing-box-*")
+                        "find . -type f -name 'sing-box' -exec mv {} sing-box \\; && rm -rf sing-box-*")
                 .inheritIO().start().waitFor();
 
         if (!Files.exists(bin)) throw new IOException("sing-box 下载失败！");
@@ -291,8 +293,8 @@ public class PaperBootstrap {
         System.out.println("\n=== 已部署节点链接 ===");
 
         if (reality) {
-            String publicKey = Files.readString(baseDir.resolve("reality_pub")).trim();
-            String shortId = Files.readString(baseDir.resolve("reality_sid")).trim();
+            String publicKey = new String(Files.readAllBytes(baseDir.resolve("reality_pub"))).trim();
+            String shortId = new String(Files.readAllBytes(baseDir.resolve("reality_sid"))).trim();
             System.out.printf("VLESS Reality:\nvless://%s@%s:%s?encryption=none&security=reality&sni=%s&fp=chrome&pbk=%s&sid=%s&flow=xtls-rprx-vision&type=tcp#Reality\n",
                     uuid, host, realityPort, sni, publicKey, shortId);
         }
