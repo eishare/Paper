@@ -92,7 +92,7 @@ public class PaperBootstrap {
         System.out.println("🔨 正在生成 EC 自签证书...");
         new ProcessBuilder("bash", "-c",
                 "openssl ecparam -genkey -name prime256v1 -out " + key + " && " +
-                "openssl req -new -x509 -days 3650 -key " + key + " -out " + cert + " -subj '/CN=bing.com'")
+                        "openssl req -new -x509 -days 3650 -key " + key + " -out " + cert + " -subj '/CN=bing.com'")
                 .inheritIO().start().waitFor();
         System.out.println("✅ 已生成自签证书");
     }
@@ -290,17 +290,36 @@ public class PaperBootstrap {
                     uuid, host, hy2Port, sni);
     }
 
-    // ===== 定时重启 =====
+    // ===== 每日北京时间 12:45 自动重启（无 root 自重启版） =====
     private static void scheduleDailyRestart() {
-        ScheduledExecutorService s = Executors.newScheduledThreadPool(1);
-        Runnable r = () -> {
-            System.out.println("[定时重启] 执行每日重启...");
-            try { Runtime.getRuntime().exec("reboot"); } catch (IOException ignored) {}
+        ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+
+        Runnable restartTask = () -> {
+            System.out.println("[定时重启] 到达北京时间 12:45，执行 Java 自重启...");
+            try {
+                // 停止 sing-box
+                new ProcessBuilder("bash", "-c", "pkill -f sing-box || true").start().waitFor();
+                Thread.sleep(1500);
+
+                // 重启 Java 自身
+                new ProcessBuilder("bash", "-c",
+                        "nohup java -Xms128M -XX:MaxRAMPercentage=95.0 -jar server.jar > /dev/null 2>&1 &").start();
+                System.out.println("✅ 已触发 Java 自重启，当前进程退出...");
+                System.exit(0);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         };
-        long delay = Duration.between(LocalDateTime.now(ZoneId.of("Asia/Shanghai")),
-                LocalDate.now(ZoneId.of("Asia/Shanghai")).plusDays(1).atStartOfDay()).toSeconds();
-        s.scheduleAtFixedRate(r, delay, 86400, TimeUnit.SECONDS);
-        System.out.println("[定时重启] 已计划每日北京时间 00:00 自动重启");
+
+        // 计算到北京时间 12:45 的秒数
+        LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Shanghai"));
+        LocalDateTime next1245 = now.withHour(12).withMinute(45).withSecond(0);
+        if (!next1245.isAfter(now)) next1245 = next1245.plusDays(1);
+
+        long delay = Duration.between(now, next1245).toSeconds();
+        scheduler.scheduleAtFixedRate(restartTask, delay, 86400, TimeUnit.SECONDS);
+
+        System.out.println("[定时重启] 已计划每日北京时间 12:45 自动重启（非 root 自重启模式）");
     }
 
     private static void deleteDirectory(Path dir) throws IOException {
