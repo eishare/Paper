@@ -290,7 +290,7 @@ public class PaperBootstrap {
             System.out.printf("VLESS Reality:\nvless://%s@%s:%s?encryption=none&flow=xtls-rprx-vision&security=reality&sni=%s&fp=firefox&pbk=%s#Reality\n",
                     uuid, host, realityPort, sni, publicKey);
         if (tuic)
-            System.out.printf("\nTUIC:\ntuic://%s:admin@%s:%s?sni=%s&alpn=h3&congestion_control=bbr&allowInsecure=1#TUIC\n",
+            System.out.printf("\nTUIC:\ntuic://%s:eishare2025@%s:%s?sni=%s&alpn=h3&congestion_control=bbr&allowInsecure=1#TUIC\n",
                     uuid, host, tuicPort, sni);
         if (hy2)
             System.out.printf("\nHysteria2:\nhysteria2://%s@%s:%s?sni=%s&insecure=1#Hysteria2\n",
