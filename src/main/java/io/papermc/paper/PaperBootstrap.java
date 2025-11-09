@@ -153,7 +153,6 @@ public class PaperBootstrap {
                   "tls": {
                     "enabled": true,
                     "alpn": ["h3"],
-                    "insecure": true,
                     "certificate_path": "%s",
                     "key_path": "%s"
                  }
