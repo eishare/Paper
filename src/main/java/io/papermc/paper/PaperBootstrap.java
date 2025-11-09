@@ -168,12 +168,18 @@ public class PaperBootstrap {
                 .inheritIO().start().waitFor();
 
         if (!Files.exists(Paths.get(file))) throw new IOException("下载失败！");
+
+        // ✅ 兼容：tar包根目录可能直接包含sing-box文件
         new ProcessBuilder("bash", "-c",
-                "tar -xzf " + file + " && mv sing-box-" + version + "/sing-box ./sing-box && chmod +x sing-box")
+                "tar -xzf " + file + " && " +
+                "(if [ -f sing-box ]; then chmod +x sing-box; " +
+                "else find . -type f -name 'sing-box' -exec mv {} ./sing-box \\; && chmod +x sing-box; fi)")
                 .inheritIO().start().waitFor();
 
         if (!Files.exists(Paths.get("sing-box")))
             throw new IOException("未找到可执行文件！");
+        else
+            System.out.println("✅ 成功解压并找到 sing-box 可执行文件");
     }
 
     private static String detectArch() {
