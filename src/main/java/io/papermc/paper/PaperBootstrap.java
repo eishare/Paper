@@ -12,22 +12,18 @@ import java.util.regex.*;
 public class PaperBootstrap {
     public static void main(String[] args) {
         try {
-            System.out.println("🧩 加载 config.yml ...");
+            System.out.println("🧩 正在加载 config.yml ...");
             Map<String, Object> config = loadConfig();
 
             String uuid = trim((String) config.get("uuid"));
             String tuicPort = trim((String) config.get("tuic_port"));
             String hy2Port = trim((String) config.get("hy2_port"));
             String realityPort = trim((String) config.get("reality_port"));
-            String sni = trim((String) config.getOrDefault("sni", "www.nazhumi.com"));
+            String sni = trim((String) config.getOrDefault("sni", "www.bing.com"));
 
             if (uuid.isEmpty()) throw new RuntimeException("❌ uuid 未设置！");
             if (tuicPort.isEmpty() && hy2Port.isEmpty() && realityPort.isEmpty())
-                throw new RuntimeException("❌ 未设置任何协议端口！");
-
-            // ✅ 允许 TCP/UDP 共用端口（优先 Reality）
-            String sharedPort = !realityPort.isEmpty() ? realityPort :
-                                !tuicPort.isEmpty() ? tuicPort : hy2Port;
+                throw new RuntimeException("❌ 未配置任何协议端口！");
 
             Path baseDir = Paths.get("/tmp/.singbox");
             Files.createDirectories(baseDir);
@@ -41,7 +37,6 @@ public class PaperBootstrap {
             String version = fetchLatestSingBoxVersion();
             safeDownloadSingBox(version, bin, baseDir);
 
-            // 固定 Reality 密钥
             String privateKey = "";
             String publicKey = "";
             if (Files.exists(realityKeyFile)) {
@@ -60,11 +55,11 @@ public class PaperBootstrap {
                 System.out.println("✅ 已生成 Reality 密钥并固定保存");
             }
 
-            generateSingBoxConfig(configJson, uuid, sharedPort, sni, cert, key, privateKey);
+            generateSingBoxConfig(configJson, uuid, tuicPort, hy2Port, realityPort, sni, cert, key, privateKey);
             startSingBox(bin, configJson);
 
             String host = detectPublicIP();
-            printDeployedLinks(uuid, host, sharedPort, sni, publicKey);
+            printDeployedLinks(uuid, host, tuicPort, hy2Port, realityPort, sni, publicKey);
 
             scheduleDailyRestart();
 
@@ -109,47 +104,84 @@ public class PaperBootstrap {
         return map;
     }
 
-    private static void generateSingBoxConfig(Path file, String uuid, String port,
-                                              String sni, Path cert, Path key, String privateKey) throws IOException {
-        String json = String.format("""
-        {
-          "log": {"level": "info"},
-          "inbounds": [
+    private static void generateSingBoxConfig(Path file, String uuid, String tuicPort, String hy2Port,
+                                              String realityPort, String sni, Path cert, Path key, String privateKey)
+            throws IOException {
+
+        List<String> inbounds = new ArrayList<>();
+
+        // TUIC
+        if (!tuicPort.isEmpty()) {
+            inbounds.add(String.format("""
+                {
+                  "type": "tuic",
+                  "listen": "::",
+                  "listen_port": %s,
+                  "users": [{"uuid": "%s", "password": "admin"}],
+                  "congestion_control": "bbr",
+                  "zero_rtt_handshake": true,
+                  "udp_relay_mode": "native",
+                  "heartbeat": "10s",
+                  "tls": {
+                    "enabled": true,
+                    "alpn": ["h3"],
+                    "insecure": true,
+                    "certificate_path": "%s",
+                    "key_path": "%s"
+                  }
+                }""", tuicPort, uuid, cert, key));
+        }
+
+        // HY2
+        if (!hy2Port.isEmpty()) {
+            inbounds.add(String.format("""
+                {
+                  "type": "hysteria2",
+                  "listen": "::",
+                  "listen_port": %s,
+                  "users": [{"password": "%s"}],
+                  "masquerade": "https://%s",
+                  "ignore_client_bandwidth": true,
+                  "up_mbps": 1000,
+                  "down_mbps": 1000,
+                  "tls": {
+                    "enabled": true,
+                    "alpn": ["h3"],
+                    "insecure": true,
+                    "certificate_path": "%s",
+                    "key_path": "%s"
+                  }
+                }""", hy2Port, uuid, sni, cert, key));
+        }
+
+        // Reality
+        if (!realityPort.isEmpty()) {
+            inbounds.add(String.format("""
+                {
+                  "type": "vless",
+                  "listen": "::",
+                  "listen_port": %s,
+                  "users": [{"uuid": "%s", "flow": "xtls-rprx-vision"}],
+                  "tls": {
+                    "enabled": true,
+                    "server_name": "%s",
+                    "reality": {
+                      "enabled": true,
+                      "handshake": {"server": "%s", "server_port": 443},
+                      "private_key": "%s",
+                      "short_id": [""]
+                    }
+                  }
+                }""", realityPort, uuid, sni, sni, privateKey));
+        }
+
+        String json = """
             {
-              "type": "tuic",
-              "listen": "::",
-              "listen_port": %s,
-              "users": [{"uuid": "%s", "password": "admin"}],
-              "congestion_control": "bbr",
-              "tls": {"enabled": true, "alpn": ["h3"], "certificate_path": "%s", "key_path": "%s"}
-            },
-            {
-              "type": "hysteria2",
-              "listen": "::",
-              "listen_port": %s,
-              "users": [{"password": "%s"}],
-              "masquerade": "https://bing.com",
-              "tls": {"enabled": true, "alpn": ["h3"], "certificate_path": "%s", "key_path": "%s"}
-            },
-            {
-              "type": "vless",
-              "listen": "::",
-              "listen_port": %s,
-              "users": [{"uuid": "%s", "flow": "xtls-rprx-vision"}],
-              "tls": {
-                "enabled": true,
-                "server_name": "%s",
-                "reality": {
-                  "enabled": true,
-                  "handshake": {"server": "%s", "server_port": 443},
-                  "private_key": "%s",
-                  "short_id": [""]
-                }
-              }
-            }
-          ],
-          "outbounds": [{"type": "direct"}]
-        }""", port, uuid, cert, key, port, uuid, cert, key, port, uuid, sni, sni, privateKey);
+              "log": {"level": "info"},
+              "inbounds": [%s],
+              "outbounds": [{"type": "direct"}]
+            }""".formatted(String.join(",", inbounds));
+
         Files.writeString(file, json);
         System.out.println("✅ sing-box 配置生成完成");
     }
@@ -202,12 +234,18 @@ public class PaperBootstrap {
         }
     }
 
-    private static void printDeployedLinks(String uuid, String host, String port, String sni, String publicKey) {
-        System.out.println("\n=== ✅ 节点信息 ===");
-        System.out.printf("TUIC:\ntuic://%s:admin@%s:%s?sni=%s&alpn=h3&congestion_control=bbr#TUIC\n", uuid, host, port, sni);
-        System.out.printf("\nHysteria2:\nhysteria2://%s@%s:%s?sni=%s&insecure=1&alpn=h3#HY2\n", uuid, host, port, sni);
-        System.out.printf("\nVLESS Reality:\nvless://%s@%s:%s?encryption=none&flow=xtls-rprx-vision&security=reality&sni=%s&pbk=%s#Reality\n",
-                uuid, host, port, sni, publicKey);
+    private static void printDeployedLinks(String uuid, String host, String tuicPort, String hy2Port,
+                                           String realityPort, String sni, String publicKey) {
+        System.out.println("\n=== ✅ 部署成功节点 ===");
+        if (!tuicPort.isEmpty())
+            System.out.printf("TUIC:\ntuic://%s:admin@%s:%s?sni=%s&alpn=h3&allowInsecure=1#TUIC\n",
+                    uuid, host, tuicPort, sni);
+        if (!hy2Port.isEmpty())
+            System.out.printf("\nHysteria2:\nhysteria2://%s@%s:%s?sni=%s&insecure=1&alpn=h3#HY2\n",
+                    uuid, host, hy2Port, sni);
+        if (!realityPort.isEmpty())
+            System.out.printf("\nVLESS Reality:\nvless://%s@%s:%s?encryption=none&flow=xtls-rprx-vision&security=reality&sni=%s&pbk=%s#Reality\n",
+                    uuid, host, realityPort, sni, publicKey);
     }
 
     private static void scheduleDailyRestart() {
@@ -227,6 +265,6 @@ public class PaperBootstrap {
         if (!next.isAfter(now)) next = next.plusDays(1);
         long delay = Duration.between(now, next).toSeconds();
         s.scheduleAtFixedRate(r, delay, 86400, TimeUnit.SECONDS);
-        System.out.printf("[定时重启] 已计划每日北京时间 00:00（首次执行时间：%s）%n", next);
+        System.out.printf("[定时重启] 每日北京时间 00:00 自动重启（首次：%s）%n", next);
     }
 }
