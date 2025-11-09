@@ -7,6 +7,7 @@ import java.nio.file.*;
 import java.time.*;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.regex.*;
 
 public class PaperBootstrap {
     public static void main(String[] args) {
@@ -43,19 +44,21 @@ public class PaperBootstrap {
             Path bin = baseDir.resolve("sing-box");
             safeDownloadSingBox(version, bin, baseDir);
 
-            // 生成 Reality 密钥对
-            String[] realityKeys = generateRealityKeypair(bin);
-            String privateKey = realityKeys[0];
-            String shortId = realityKeys[1];
+            // ✅ 生成 Reality 密钥对
+            Map<String, String> realityKeys = generateRealityKeypair(bin);
+            String privateKey = realityKeys.get("private_key");
+            String publicKey = realityKeys.get("public_key");
+            String shortId = realityKeys.get("short_id");
 
             generateSingBoxConfig(configJson, uuid, deployVLESS, deployTUIC, deployHY2,
-                    tuicPort, hy2Port, realityPort, sni, cert, key, privateKey, shortId);
+                    tuicPort, hy2Port, realityPort, sni, cert, key,
+                    privateKey, publicKey, shortId);
 
             startSingBox(bin, configJson);
 
             String host = detectPublicIP();
             printDeployedLinks(uuid, deployVLESS, deployTUIC, deployHY2,
-                    tuicPort, hy2Port, realityPort, sni, host);
+                    tuicPort, hy2Port, realityPort, sni, host, publicKey);
             scheduleDailyRestart();
 
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -89,26 +92,46 @@ public class PaperBootstrap {
         System.out.println("✅ 已生成自签证书");
     }
 
-    private static String[] generateRealityKeypair(Path bin) throws IOException, InterruptedException {
+    // ✅ 支持 JSON 输出格式的新 Reality Keypair
+    private static Map<String, String> generateRealityKeypair(Path bin) throws IOException, InterruptedException {
         System.out.println("🔑 正在生成 Reality 密钥对...");
         ProcessBuilder pb = new ProcessBuilder("bash", "-c", bin + " generate reality-keypair");
         pb.redirectErrorStream(true);
         Process p = pb.start();
-        BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()));
-        String line, priv = "", sid = "";
-        while ((line = reader.readLine()) != null) {
-            if (line.contains("PrivateKey")) priv = line.split(": ")[1].trim();
-            if (line.contains("ShortId")) sid = line.split(": ")[1].trim();
+
+        StringBuilder sb = new StringBuilder();
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
+            String line;
+            while ((line = br.readLine()) != null) sb.append(line);
         }
         p.waitFor();
+        String output = sb.toString();
+
+        // ✅ 使用正则提取 JSON 字段
+        String priv = extractJsonValue(output, "private_key");
+        String pub = extractJsonValue(output, "public_key");
+        String sid = extractJsonValue(output, "short_id");
+
+        if (priv.isEmpty() || pub.isEmpty() || sid.isEmpty())
+            throw new IOException("❌ Reality 密钥生成失败，输出异常: " + output);
+
         System.out.println("✅ Reality 密钥生成完成");
-        return new String[]{priv, sid};
+        Map<String, String> map = new HashMap<>();
+        map.put("private_key", priv);
+        map.put("public_key", pub);
+        map.put("short_id", sid);
+        return map;
+    }
+
+    private static String extractJsonValue(String json, String key) {
+        Matcher m = Pattern.compile("\"" + key + "\"\\s*:\\s*\"([^\"]+)\"").matcher(json);
+        return m.find() ? m.group(1) : "";
     }
 
     private static void generateSingBoxConfig(Path configFile, String uuid, boolean vless, boolean tuic, boolean hy2,
                                               String tuicPort, String hy2Port, String realityPort,
                                               String sni, Path cert, Path key,
-                                              String privateKey, String shortId) throws IOException {
+                                              String privateKey, String publicKey, String shortId) throws IOException {
 
         List<String> inbounds = new ArrayList<>();
         String password = "ieshare2025";
@@ -117,7 +140,6 @@ public class PaperBootstrap {
             inbounds.add("""
               {
                 "type": "vless",
-                "tag": "vless-in",
                 "listen": "::",
                 "listen_port": %s,
                 "users": [{"uuid": "%s"}],
@@ -129,11 +151,12 @@ public class PaperBootstrap {
                     "enabled": true,
                     "handshake": {"server": "%s", "server_port": 443},
                     "private_key": "%s",
+                    "public_key": "%s",
                     "short_id": "%s"
                   }
                 }
               }
-            """.formatted(realityPort, uuid, cert, key, sni, privateKey, shortId));
+            """.formatted(realityPort, uuid, cert, key, sni, privateKey, publicKey, shortId));
         }
 
         String udpPort = !tuicPort.isEmpty() ? tuicPort : (!hy2Port.isEmpty() ? hy2Port : realityPort);
@@ -142,7 +165,6 @@ public class PaperBootstrap {
             inbounds.add("""
               {
                 "type": "tuic",
-                "tag": "tuic-in",
                 "listen": "::",
                 "listen_port": %s,
                 "uuid": "%s",
@@ -160,7 +182,6 @@ public class PaperBootstrap {
             inbounds.add("""
               {
                 "type": "hysteria2",
-                "tag": "hy2-in",
                 "listen": "::",
                 "listen_port": %s,
                 "password": "%s"
@@ -246,11 +267,11 @@ public class PaperBootstrap {
 
     private static void printDeployedLinks(String uuid, boolean vless, boolean tuic, boolean hy2,
                                            String tuicPort, String hy2Port, String realityPort,
-                                           String sni, String host) {
+                                           String sni, String host, String publicKey) {
         System.out.println("\n=== ✅ 已部署节点链接 ===");
         if (vless)
-            System.out.printf("VLESS Reality:\nvless://%s@%s:%s?encryption=none&security=reality&sni=%s#Reality\n",
-                    uuid, host, realityPort, sni);
+            System.out.printf("VLESS Reality:\nvless://%s@%s:%s?encryption=none&security=reality&pbk=%s&sni=%s#Reality\n",
+                    uuid, host, realityPort, publicKey, sni);
         if (tuic)
             System.out.printf("\nTUIC:\ntuic://%s@%s:%s?password=ieshare2025&alpn=h3#TUIC\n",
                     uuid, host, !tuicPort.isEmpty() ? tuicPort : realityPort);
