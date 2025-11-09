@@ -150,8 +150,7 @@ public class PaperBootstrap {
                 "listen_port": 443,
                 "users": [{ "uuid": "UUID", "password": "eishare2025" }],
                 "congestion_control": "bbr",
-                "udp_relay_mode": "native",
-                "heartbeat": "10s",
+                "udp_relay_mode": "quic"
                 "tls": {
                   "enabled": true,
                   "alpn": ["h3"],
