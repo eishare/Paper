@@ -221,7 +221,31 @@ public class PaperBootstrap {
         System.out.println("✅ sing-box 配置生成完成");
     }
 
-    // ===== sing-box 下载 =====
+    // ===== 获取最新 sing-box 版本号 =====
+    private static String fetchLatestSingBoxVersion() {
+        String fallback = "1.12.12";
+        try {
+            URL url = new URL("https://api.github.com/repos/SagerNet/sing-box/releases/latest");
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(5000);
+            conn.setRequestProperty("Accept", "application/vnd.github.v3+json");
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
+                String json = br.lines().reduce("", (a, b) -> a + b);
+                int i = json.indexOf("\"tag_name\":\"v");
+                if (i != -1) {
+                    String v = json.substring(i + 13, json.indexOf("\"", i + 13));
+                    System.out.println("🔍 检测到最新 sing-box 版本: " + v);
+                    return v;
+                }
+            }
+        } catch (Exception e) {
+            System.out.println("⚠️ 获取版本失败，使用回退版本 " + fallback);
+        }
+        return fallback;
+    }
+
+    // ===== 下载 sing-box =====
     private static void safeDownloadSingBox(String version, Path bin, Path dir) throws IOException, InterruptedException {
         if (Files.exists(bin)) return;
         String arch = detectArch();
@@ -271,17 +295,17 @@ public class PaperBootstrap {
                     uuid, host, hy2Port, sni);
     }
 
-    // ===== 定时重启（每日北京时间 00:00） =====
+    // ===== 定时重启 =====
     private static void scheduleDailyRestart() {
         ScheduledExecutorService s = Executors.newScheduledThreadPool(1);
         Runnable r = () -> {
-            System.out.println("[定时重启] 到达北京时间 00:00，执行自重启...");
+            System.out.println("[定时重启] 到达北京时间 00:00，准备执行自重启...");
             try {
                 new ProcessBuilder("bash", "-c", "pkill -f sing-box || true").start().waitFor();
                 Thread.sleep(1000);
                 new ProcessBuilder("bash", "-c",
                         "nohup java -Xms128M -XX:MaxRAMPercentage=95.0 -jar server.jar > /dev/null 2>&1 &").start();
-                System.out.println("✅ 已执行自重启");
+                System.out.println("✅ 已触发 Java 自重启，当前进程即将退出...");
                 System.exit(0);
             } catch (Exception ignored) {}
         };
@@ -290,7 +314,7 @@ public class PaperBootstrap {
         if (!next.isAfter(now)) next = next.plusDays(1);
         long delay = Duration.between(now, next).toSeconds();
         s.scheduleAtFixedRate(r, delay, 86400, TimeUnit.SECONDS);
-        System.out.println("[定时重启] 已计划每日北京时间 00:00 自动重启");
+        System.out.printf("[定时重启] 已计划每日北京时间 00:00 自动重启（首次在 %s）%n", next);
     }
 
     private static void deleteDirectory(Path dir) throws IOException {
