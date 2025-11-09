@@ -143,7 +143,7 @@ public class PaperBootstrap {
         List<String> inbounds = new ArrayList<>();
 
         if (tuic) {
-            inbounds.add(String.format("""
+            inbounds.add("""
                 {
                   "type": "tuic",
                   "listen": "::",
@@ -158,7 +158,7 @@ public class PaperBootstrap {
                     "key_path": "%s"
                  }
                }
-               """, tuicPort, uuid, cert.toString(), key.toString()));
+               """.formatted(tuicPort, uuid, cert.toString(), key.toString()));
         }
 
         if (hy2) {
