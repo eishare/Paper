@@ -3,5 +3,6 @@ uuid: ""                       #输入uuid
 tuic_port: ""                  #输入端口=确认部署
 hy2_port: ""                   #输入端口=确认部署
 anytls_port: ""                #输入端口=确认部署
-xhttp_port: ""                 #输入端口=确认部署（xhttp不能跟udp共用端口）
+xhttp_port: ""                 #输入端口=确认部署
 sni: "www.bing.com"
+UDP/TCP可共用端口
