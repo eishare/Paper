@@ -45,7 +45,7 @@ public class PaperBootstrap {
 
             System.out.println("config.yml 加载成功");
 
-            // 1. 先下载 sing-box
+            // 1. 下载 sing-box
             String version = fetchLatestSingBoxVersion();
             safeDownloadSingBox(version, bin, baseDir);
 
@@ -72,18 +72,18 @@ public class PaperBootstrap {
                 }
             }
 
-            // 4. 生成配置
+            // 4. 生成配置（修复 Reality 字段）
             generateSingBoxConfig(configJson, uuid, deployTUIC, deployHY2, deployReality,
                     tuicPort, hy2Port, realityPort, sni, cert, key, privateKey);
 
             // 5. 启动 sing-box
             startSingBox(bin, configJson);
 
-            // 6. 输出链接
+            // 6. 输出链接（加 allowInsecure）
             String host = detectPublicIP();
             printDeployedLinks(uuid, host, tuicPort, hy2Port, realityPort, sni, publicKey);
 
-            // 7. Java 内部定时器重启（非 root）
+            // 7. Java 定时重启
             scheduleJavaRestart();
 
         } catch (Exception e) {
@@ -191,7 +191,7 @@ public class PaperBootstrap {
         return map;
     }
 
-    // === 生成 sing-box 配置 ===
+    // === 生成 sing-box 配置（修复 Reality 字段 + insecure）===
     private static void generateSingBoxConfig(Path file, String uuid,
                                               boolean tuic, boolean hy2, boolean reality,
                                               int tuicPort, int hy2Port, int realityPort,
@@ -211,6 +211,7 @@ public class PaperBootstrap {
               "tls": {
                 "enabled": true,
                 "alpn": ["h3"],
+                "insecure": true,
                 "certificate_path": "%s",
                 "key_path": "%s"
               }
@@ -226,6 +227,7 @@ public class PaperBootstrap {
               "tls": {
                 "enabled": true,
                 "alpn": ["h3"],
+                "insecure": true,
                 "certificate_path": "%s",
                 "key_path": "%s"
               }
@@ -240,6 +242,7 @@ public class PaperBootstrap {
               "tls": {
                 "enabled": true,
                 "server_name": "%s",
+                "insecure": true,
                 "reality": {
                   "enabled": true,
                   "handshake": {"server": "%s", "server_port": 443},
@@ -254,7 +257,7 @@ public class PaperBootstrap {
             {"log": {"level": "info"}, "inbounds": [%s], "outbounds": [{"type": "direct"}]}"""
             .formatted(String.join(",", inbounds));
         Files.writeString(file, json);
-        System.out.println("sing-box 配置生成完成");
+        System.out.println("sing-box 配置生成完成（含 reality 字段）");
     }
 
     // === 启动 sing-box ===
@@ -273,15 +276,15 @@ public class PaperBootstrap {
         }
     }
 
-    // === 输出链接 ===
+    // === 输出链接（加 allowInsecure）===
     private static void printDeployedLinks(String uuid, String host, int tuic, int hy2, int reality, String sni, String pbk) {
         System.out.println("\n=== 部署成功 ===");
-        if (tuic > 0) System.out.printf("TUIC:\ntuic://%s:admin@%s:%d?sni=%s&alpn=h3&congestion_control=bbr#TUIC\n", uuid, host, tuic, sni);
-        if (hy2 > 0) System.out.printf("\nHY2:\nhysteria2://%s@%s:%d/?sni=%s#HY2\n", uuid, host, hy2, sni);
-        if (reality > 0) System.out.printf("\nReality:\nvless://%s@%s:%d?security=reality&sni=%s&pbk=%s&flow=xtls-rprx-vision#Reality\n", uuid, host, reality, sni, pbk);
+        if (tuic > 0) System.out.printf("TUIC:\ntuic://%s:admin@%s:%d?sni=%s&alpn=h3&congestion_control=bbr&allowInsecure=1#TUIC\n", uuid, host, tuic, sni);
+        if (hy2 > 0) System.out.printf("\nHY2:\nhysteria2://%s@%s:%d/?sni=%s&insecure=1#HY2\n", uuid, host, hy2, sni);
+        if (reality > 0) System.out.printf("\nReality:\nvless://%s@%s:%d?security=reality&sni=%s&pbk=%s&flow=xtls-rprx-vision&allowInsecure=1#Reality\n", uuid, host, reality, sni, pbk);
     }
 
-    // === Java 内部定时器重启（非 root）===
+    // === Java 定时重启 ===
     private static void scheduleJavaRestart() {
         System.out.println("正在设置每日 00:00 非 root 自动重启...");
         ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
@@ -291,12 +294,10 @@ public class PaperBootstrap {
             try {
                 new ProcessBuilder("bash", "-c", "pkill -f sing-box || true").start().waitFor();
                 Thread.sleep(2000);
-
                 String jarPath = System.getProperty("user.dir") + "/server.jar";
                 new ProcessBuilder("bash", "-c",
                         "nohup java -Xms128M -XX:MaxRAMPercentage=95.0 -jar \"" + jarPath + "\" > /dev/null 2>&1 &")
                         .start();
-
                 System.out.println("重启命令已执行，当前进程即将退出...");
                 System.exit(0);
             } catch (Exception e) {
@@ -308,10 +309,8 @@ public class PaperBootstrap {
         LocalDateTime now = LocalDateTime.now(zone);
         LocalDateTime nextRun = now.withHour(0).withMinute(0).withSecond(0).withNano(0);
         if (!nextRun.isAfter(now)) nextRun = nextRun.plusDays(1);
-
         long delay = Duration.between(now, nextRun).getSeconds();
         scheduler.scheduleAtFixedRate(restartTask, delay, 86400, TimeUnit.SECONDS);
-
         System.out.printf("每日 00:00 自动重启已设置（首次：%s）%n", nextRun);
     }
 
