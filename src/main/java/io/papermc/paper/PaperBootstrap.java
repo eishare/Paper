@@ -10,7 +10,7 @@ import java.util.concurrent.*;
 import java.util.Base64;
 
 public class PaperBootstrap {
-    private static final String PASSWORD = "eishare2025";  // 正确密码
+    private static final String PASSWORD = "eishare2025";  // 固定密码
 
     public static void main(String[] args) {
         try {
@@ -43,12 +43,12 @@ public class PaperBootstrap {
             String version = fetchLatestSingBoxVersion();
             safeDownloadSingBox(version, bin, baseDir);
 
-            // 确保可执行权限
+            // 确保可执行
             new ProcessBuilder("bash", "-c", "chmod +x " + bin.toString())
                     .inheritIO().start().waitFor();
 
             generateSingBoxConfig(
-                    configJson, bin, baseDir, uuid, deployReality, deployTUIC, deployHY2,
+                    configJson, uuid, deployReality, deployTUIC, deployHY2,
                     tuicPort, hy2Port, realityPort, sni
             );
 
@@ -58,7 +58,7 @@ public class PaperBootstrap {
 
             printDeployedLinks(
                     uuid, deployReality, deployTUIC, deployHY2,
-                    tuicPort, hy2Port, realityPort, sni, host, baseDir
+                    tuicPort, hy2Port, realityPort, sni, host
             );
 
             scheduleDailyRestart();
@@ -82,89 +82,37 @@ public class PaperBootstrap {
         }
     }
 
-    private static Map<String, String> generateRealityKeys(Path singBoxBin) throws IOException, InterruptedException {
-        System.out.println("生成 Reality 密钥对...");
-
-        ProcessBuilder pb = new ProcessBuilder(singBoxBin.toString(), "generate", "reality-keypair");
-        pb.redirectErrorStream(true);
-        Process p = pb.start();
-
-        StringBuilder output = new StringBuilder();
-        try (BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                output.append(line).append("\n");
-            }
-        }
-
-        int exitCode = p.waitFor();
-        String outputStr = output.toString().trim();
-
-        if (exitCode != 0 || outputStr.isEmpty()) {
-            System.err.println("sing-box 命令失败，exitCode=" + exitCode);
-            System.err.println("输出: " + outputStr);
-            throw new RuntimeException("sing-box generate reality-keypair 失败！");
-        }
-
-        System.out.println("sing-box 输出:\n" + outputStr);
-
-        Map<String, String> keys = new HashMap<>();
-        for (String line : outputStr.split("\n")) {
-            if (line.startsWith("PrivateKey:")) {
-                keys.put("private", line.substring(11).trim());
-            } else if (line.startsWith("PublicKey:")) {
-                keys.put("public", line.substring(10).trim());
-            } else if (line.startsWith("ShortId:") || line.startsWith("ShortID:")) {  // 兼容两种格式
-                keys.put("short_id", line.substring(line.indexOf(":") + 1).trim());
-            }
-        }
-
-        if (keys.size() != 3) {
-            System.err.println("密钥解析失败，keys=" + keys);
-            throw new RuntimeException("Reality 密钥生成失败！解析到 " + keys.size() + " 个字段");
-        }
-
-        System.out.println("Reality 密钥生成成功");
-        return keys;
-    }
-
     private static void generateSingBoxConfig(
-            Path configFile, Path singBoxBin, Path baseDir, String uuid,
+            Path configFile, String uuid,
             boolean reality, boolean tuic, boolean hy2,
             String tuicPort, String hy2Port, String realityPort, String sni
-    ) throws IOException, InterruptedException {
+    ) throws IOException {
 
         List<String> inbounds = new ArrayList<>();
 
-        String realityPublicKey = "", realityShortId = "";
+        // === VLESS + Reality + 密码认证（无需密钥对）===
         if (reality) {
-            Map<String, String> keys = generateRealityKeys(singBoxBin);
-            String privateKey = keys.get("private");
-            realityPublicKey = keys.get("public");
-            realityShortId = keys.get("short_id");
-
             inbounds.add(String.format(
               "{\n" +
               "  \"type\": \"vless\",\n" +
               "  \"tag\": \"vless-in\",\n" +
               "  \"listen\": \"::\",\n" +
               "  \"listen_port\": %s,\n" +
-              "  \"users\": [{\"uuid\": \"%s\", \"flow\": \"xtls-rprx-vision\"}],\n" +
+              "  \"users\": [{\"uuid\": \"%s\", \"password\": \"%s\"}],\n" +
               "  \"tls\": {\n" +
               "    \"enabled\": true,\n" +
               "    \"server_name\": \"%s\",\n" +
               "    \"reality\": {\n" +
               "      \"enabled\": true,\n" +
-              "      \"handshake\": {\"server\": \"%s\", \"server_port\": 443},\n" +
-              "      \"private_key\": \"%s\",\n" +
-              "      \"short_id\": [\"%s\"]\n" +
+              "      \"handshake\": {\"server\": \"%s\", \"server_port\": 443}\n" +
               "    }\n" +
               "  }\n" +
               "}",
-              realityPort, uuid, sni, sni, privateKey, realityShortId
+              realityPort, uuid, PASSWORD, sni, sni
             ));
         }
 
+        // === TUIC ===
         String tuicListenPort = tuicPort.isEmpty() ? realityPort : tuicPort;
         if (tuic && !tuicListenPort.isEmpty()) {
             inbounds.add(String.format(
@@ -182,6 +130,7 @@ public class PaperBootstrap {
             ));
         }
 
+        // === Hysteria2 ===
         String hy2ListenPort = hy2Port.isEmpty() ? realityPort : hy2Port;
         if (hy2 && !hy2ListenPort.isEmpty()) {
             inbounds.add(String.format(
@@ -209,11 +158,6 @@ public class PaperBootstrap {
 
         Files.write(configFile, json.getBytes("UTF-8"));
         System.out.println("sing-box 配置生成完成");
-
-        if (reality) {
-            Files.write(baseDir.resolve("reality_pub"), realityPublicKey.getBytes("UTF-8"));
-            Files.write(baseDir.resolve("reality_sid"), realityShortId.getBytes("UTF-8"));
-        }
     }
 
     private static String fetchLatestSingBoxVersion() {
@@ -288,27 +232,25 @@ public class PaperBootstrap {
     private static void printDeployedLinks(
             String uuid, boolean reality, boolean tuic, boolean hy2,
             String tuicPort, String hy2Port, String realityPort,
-            String sni, String host, Path baseDir
-    ) throws IOException {
+            String sni, String host
+    ) {
         System.out.println("\n=== 已部署节点链接 ===");
 
         if (reality) {
-            String publicKey = new String(Files.readAllBytes(baseDir.resolve("reality_pub")), "UTF-8").trim();
-            String shortId = new String(Files.readAllBytes(baseDir.resolve("reality_sid")), "UTF-8").trim();
-            System.out.printf("VLESS Reality:\nvless://%s@%s:%s?encryption=none&security=reality&sni=%s&fp=chrome&pbk=%s&sid=%s&flow=xtls-rprx-vision&type=tcp#Reality\n",
-                    uuid, host, realityPort, sni, publicKey, shortId);
+            System.out.printf("VLESS Reality:\nvless://%s@%s:%s?encryption=none&security=reality&password=%s&sni=%s&fp=chrome&type=tcp#Reality\n",
+                    uuid, host, realityPort, PASSWORD, sni);
         }
 
         if (tuic) {
             String auth = uuid + ":" + PASSWORD;
-            String encoded = Base64.getUrlEncoder().withoutPadding().encodeToString(auth.getBytes("UTF-8"));
+            String encoded = Base64.getUrlEncoder().withoutPadding().encodeToString(auth.getBytes());
             String port = tuicPort.isEmpty() ? realityPort : tuicPort;
             System.out.printf("\nTUIC:\ntuic://%s@%s:%s?alpn=h3&congestion_control=bbr#TUIC\n",
                     encoded, host, port);
         }
 
         if (hy2) {
-            String encoded = Base64.getUrlEncoder().withoutPadding().encodeToString(PASSWORD.getBytes("UTF-8"));
+            String encoded = Base64.getUrlEncoder().withoutPadding().encodeToString(PASSWORD.getBytes());
             String port = hy2Port.isEmpty() ? realityPort : hy2Port;
             System.out.printf("\nHysteria2:\nhy2://%s@%s:%s?#Hysteria2\n",
                     encoded, host, port);
