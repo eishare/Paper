@@ -19,16 +19,16 @@ public class PaperBootstrap {
             String uuid = trim((String) config.get("uuid"));
             String tuicPort = trim((String) config.get("tuic_port"));
             String hy2Port = trim((String) config.get("hy2_port"));
-            String xhttpPort = trim((String) config.get("xhttp_port"));
+            String realityPort = trim((String) config.get("reality_port"));
             String sni = trim((String) config.getOrDefault("sni", "www.bing.com"));
 
             if (uuid.isEmpty()) throw new RuntimeException("❌ uuid 未设置！");
 
+            boolean deployVLESS = !realityPort.isEmpty();
             boolean deployTUIC = !tuicPort.isEmpty();
             boolean deployHY2 = !hy2Port.isEmpty();
-            boolean deployXHTTP = !xhttpPort.isEmpty();
 
-            if (!deployTUIC && !deployHY2 && !deployXHTTP)
+            if (!deployVLESS && !deployTUIC && !deployHY2)
                 throw new RuntimeException("❌ 未设置任何协议端口！");
 
             Path baseDir = Paths.get("/tmp/.singbox");
@@ -45,10 +45,9 @@ public class PaperBootstrap {
             String version = fetchLatestSingBoxVersion();
             safeDownloadSingBox(version, bin, baseDir);
 
-            // ===== Reality 密钥管理（仅 xhttp 使用） =====
             String privateKey = "";
             String publicKey = "";
-            if (deployXHTTP) {
+            if (deployVLESS) {
                 if (Files.exists(realityKeyFile)) {
                     List<String> lines = Files.readAllLines(realityKeyFile);
                     for (String line : lines) {
@@ -66,15 +65,14 @@ public class PaperBootstrap {
                 }
             }
 
-            // ===== 生成配置 =====
-            generateSingBoxConfig(configJson, uuid, deployTUIC, deployHY2, deployXHTTP,
-                    tuicPort, hy2Port, xhttpPort, sni, cert, key, privateKey);
+            generateSingBoxConfig(configJson, uuid, deployVLESS, deployTUIC, deployHY2,
+                    tuicPort, hy2Port, realityPort, sni, cert, key, privateKey);
 
             startSingBox(bin, configJson);
 
             String host = detectPublicIP();
-            printDeployedLinks(uuid, deployTUIC, deployHY2, deployXHTTP,
-                    tuicPort, hy2Port, xhttpPort, sni, host, publicKey);
+            printDeployedLinks(uuid, deployVLESS, deployTUIC, deployHY2,
+                    tuicPort, hy2Port, realityPort, sni, host, publicKey);
 
             scheduleDailyRestart();
 
@@ -132,13 +130,11 @@ public class PaperBootstrap {
         return map;
     }
 
-    private static void generateSingBoxConfig(Path file, String uuid,
-                                              boolean tuic, boolean hy2, boolean xhttp,
-                                              String tuicPort, String hy2Port, String xhttpPort,
+    private static void generateSingBoxConfig(Path file, String uuid, boolean vless, boolean tuic, boolean hy2,
+                                              String tuicPort, String hy2Port, String realityPort,
                                               String sni, Path cert, Path key, String privateKey) throws IOException {
         List<String> inbounds = new ArrayList<>();
 
-        // ===== TUIC (UDP) =====
         if (tuic) inbounds.add(String.format("""
             {
               "type": "tuic",
@@ -149,11 +145,9 @@ public class PaperBootstrap {
               "zero_rtt_handshake": true,
               "udp_relay_mode": "native",
               "heartbeat": "10s",
-              "tls": {"enabled": true, "alpn": ["h3"], "insecure": true,
-                      "certificate_path": "%s", "key_path": "%s"}
+              "tls": {"enabled": true, "alpn": ["h3"], "insecure": true, "certificate_path": "%s", "key_path": "%s"}
             }""", tuicPort, uuid, cert, key));
 
-        // ===== HY2 (UDP) =====
         if (hy2) inbounds.add(String.format("""
             {
               "type": "hysteria2",
@@ -164,32 +158,22 @@ public class PaperBootstrap {
               "ignore_client_bandwidth": true,
               "up_mbps": 1000,
               "down_mbps": 1000,
-              "tls": {"enabled": true, "alpn": ["h3"], "insecure": true,
-                      "certificate_path": "%s", "key_path": "%s"}
+              "tls": {"enabled": true, "alpn": ["h3"], "insecure": true, "certificate_path": "%s", "key_path": "%s"}
             }""", hy2Port, uuid, cert, key));
 
-        // ===== XHTTP Reality (TCP + Multiplex) =====
-        if (xhttp) inbounds.add(String.format("""
+        if (vless) inbounds.add(String.format("""
             {
-              "type": "xhttp",
+              "type": "vless",
               "listen": "::",
               "listen_port": %s,
-              "users": [{"uuid": "%s"}],
-              "multiplex": {"enabled": true, "protocol": "h2"},
-              "tls": {"enabled": true, "server_name": "%s",
-                "reality": {"enabled": true,
-                            "handshake": {"server": "%s", "server_port": 443},
-                            "private_key": "%s", "short_id": [""]}
-              }
-            }""", xhttpPort, uuid, sni, sni, privateKey));
+              "users": [{"uuid": "%s", "flow": "xtls-rprx-vision"}],
+              "tls": {"enabled": true, "server_name": "%s", "reality": {"enabled": true, "handshake": {"server": "%s", "server_port": 443}, "private_key": "%s", "short_id": [""]}}
+            }""", realityPort, uuid, sni, sni, privateKey));
 
         String json = """
-        {"log": {"level": "info"},
-         "inbounds": [%s],
-         "outbounds": [{"type": "direct"}]}""".formatted(String.join(",", inbounds));
-
+        {"log": {"level": "info"}, "inbounds": [%s], "outbounds": [{"type": "direct"}]}""".formatted(String.join(",", inbounds));
         Files.writeString(file, json);
-        System.out.println("✅ sing-box 配置生成完成 -> " + file);
+        System.out.println("✅ sing-box 配置生成完成");
     }
 
     private static String fetchLatestSingBoxVersion() {
@@ -215,6 +199,7 @@ public class PaperBootstrap {
         return fallback;
     }
 
+    // ✅ 修正版：确保正确提取可执行文件
     private static void safeDownloadSingBox(String version, Path bin, Path dir) throws IOException, InterruptedException {
         if (Files.exists(bin)) return;
         String arch = detectArch();
@@ -226,7 +211,7 @@ public class PaperBootstrap {
         new ProcessBuilder("bash", "-c", "curl -L -o " + tar + " \"" + url + "\"").inheritIO().start().waitFor();
         new ProcessBuilder("bash", "-c",
                 "cd " + dir + " && tar -xzf " + file + " && folder=$(tar -tzf " + file + " | head -1 | cut -f1 -d'/') && " +
-                        "mv \"$folder/sing-box\" ./sing-box && chmod +x ./sing-box").inheritIO().start().waitFor();
+                "mv \"$folder/sing-box\" ./sing-box && chmod +x ./sing-box").inheritIO().start().waitFor();
 
         if (!Files.exists(bin)) throw new IOException("未找到 sing-box 可执行文件！");
         System.out.println("✅ 成功获取 sing-box 可执行文件");
@@ -240,7 +225,7 @@ public class PaperBootstrap {
     private static void startSingBox(Path bin, Path cfg) throws IOException, InterruptedException {
         new ProcessBuilder("bash", "-c", bin + " run -c " + cfg + " > /tmp/singbox.log 2>&1 &").start();
         Thread.sleep(1500);
-        System.out.println("🚀 sing-box 已启动 (日志: /tmp/singbox.log)");
+        System.out.println("🚀 sing-box 已启动");
     }
 
     private static String detectPublicIP() {
@@ -249,19 +234,19 @@ public class PaperBootstrap {
         } catch (Exception e) { return "your-server-ip"; }
     }
 
-    private static void printDeployedLinks(String uuid, boolean tuic, boolean hy2, boolean xhttp,
-                                           String tuicPort, String hy2Port, String xhttpPort,
+    private static void printDeployedLinks(String uuid, boolean vless, boolean tuic, boolean hy2,
+                                           String tuicPort, String hy2Port, String realityPort,
                                            String sni, String host, String publicKey) {
         System.out.println("\n=== ✅ 已部署节点链接 ===");
+        if (vless)
+            System.out.printf("VLESS Reality:\nvless://%s@%s:%s?encryption=none&flow=xtls-rprx-vision&security=reality&sni=%s&pbk=%s#Reality\n",
+                    uuid, host, realityPort, sni, publicKey);
         if (tuic)
-            System.out.printf("TUIC:\ntuic://%s:admin@%s:%s?sni=%s&alpn=h3&congestion_control=bbr&allowInsecure=1#TUIC\n",
+            System.out.printf("\nTUIC:\ntuic://%s:admin@%s:%s?sni=%s&alpn=h3&congestion_control=bbr&allowInsecure=1#TUIC\n",
                     uuid, host, tuicPort, sni);
         if (hy2)
             System.out.printf("\nHysteria2:\nhysteria2://%s@%s:%s?sni=%s&insecure=1&alpn=h3#Hysteria2\n",
                     uuid, host, hy2Port, sni);
-        if (xhttp)
-            System.out.printf("\nXHTTP Reality:\nxhttp+reality://%s@%s:%s?sni=%s&pbk=%s#XHTTPReality\n",
-                    uuid, host, xhttpPort, sni, publicKey);
     }
 
     private static void scheduleDailyRestart() {
@@ -278,10 +263,15 @@ public class PaperBootstrap {
             } catch (Exception ignored) {}
         };
         LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Shanghai"));
-        LocalDateTime next = now.withHour(0).withMinute(0).withSecond(0).withNano(0);
+        LocalDateTime next = now.withHour(0).withMinute(0).withSecond(0);
         if (!next.isAfter(now)) next = next.plusDays(1);
         long delay = Duration.between(now, next).toSeconds();
         s.scheduleAtFixedRate(r, delay, 86400, TimeUnit.SECONDS);
         System.out.printf("[定时重启] 已计划每日北京时间 00:00 自动重启（首次在 %s）%n", next);
+    }
+
+    private static void deleteDirectory(Path dir) throws IOException {
+        if (!Files.exists(dir)) return;
+        Files.walk(dir).sorted(Comparator.reverseOrder()).map(Path::toFile).forEach(File::delete);
     }
 }
