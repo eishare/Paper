@@ -1,6 +1,6 @@
 ### Java-Paper更新说明（无需fork本项目）：
 
-* Java 启动器 + Sing-box 多协议内核伪装方案
+* Java 启动器 + Sing-box 多协议内核伪装方案；Server.jar仅有339kb，更便于部署
 
 * 精简化：去除哪吒、argo隧道；保留3种协议：tuic、hy2、vless+xtls+reality
   
