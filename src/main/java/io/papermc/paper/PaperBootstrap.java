@@ -45,7 +45,7 @@ public class PaperBootstrap {
 
             System.out.println("config.yml 加载成功");
 
-            // 1. 先下载 sing-box（关键！）
+            // 1. 先下载 sing-box
             String version = fetchLatestSingBoxVersion();
             safeDownloadSingBox(version, bin, baseDir);
 
@@ -83,8 +83,8 @@ public class PaperBootstrap {
             String host = detectPublicIP();
             printDeployedLinks(uuid, host, tuicPort, hy2Port, realityPort, sni, publicKey);
 
-            // 7. 非 root 重启
-            scheduleNonRootRestart(baseDir);
+            // 7. Java 内部定时器重启（非 root）
+            scheduleJavaRestart();
 
         } catch (Exception e) {
             System.err.println("启动失败：");
@@ -97,13 +97,13 @@ public class PaperBootstrap {
     private static String parseString(Object obj) {
         if (obj == null) return "";
         String s = obj.toString().trim();
-        if (s.startsWith("\"") && s.endsWith("\"")) {
+        if (s.startsWith("\"") && s.endsWith("\"") && s.length() > 1) {
             s = s.substring(1, s.length() - 1);
         }
         return s.trim();
     }
 
-    // === 解析端口（支持 "443" 或 443）===
+    // === 解析端口 ===
     private static int parsePort(String port) {
         if (port == null || port.isEmpty()) return 0;
         try {
@@ -135,7 +135,7 @@ public class PaperBootstrap {
         System.out.println("证书生成完成");
     }
 
-    // === 下载 sing-box（关键修复）===
+    // === 下载 sing-box ===
     private static void safeDownloadSingBox(String version, Path bin, Path dir)
             throws IOException, InterruptedException {
         if (Files.exists(bin) && Files.size(bin) > 100000) {
@@ -281,23 +281,38 @@ public class PaperBootstrap {
         if (reality > 0) System.out.printf("\nReality:\nvless://%s@%s:%d?security=reality&sni=%s&pbk=%s&flow=xtls-rprx-vision#Reality\n", uuid, host, reality, sni, pbk);
     }
 
-    // === 非 root 每日重启（cron）===
-    private static void scheduleNonRootRestart(Path baseDir) throws IOException {
-        Path restartScript = baseDir.resolve("restart.sh");
-        String jarPath = System.getProperty("user.dir") + "/server.jar";
-        Files.writeString(restartScript, """
-            #!/bin/bash
-            pkill -f sing-box || true
-            sleep 2
-            nohup java -Xms128M -XX:MaxRAMPercentage=95.0 -jar "%s" > /dev/null 2>&1 &
-            """.formatted(jarPath));
-        new ProcessBuilder("chmod", "+x", restartScript.toString()).start();
+    // === Java 内部定时器重启（非 root）===
+    private static void scheduleJavaRestart() {
+        System.out.println("正在设置每日 00:00 非 root 自动重启...");
+        ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
 
-        String cronLine = "0 0 * * * " + restartScript + " > /tmp/restart.log 2>&1";
-        Path cronFile = baseDir.resolve("crontab.txt");
-        Files.writeString(cronFile, cronLine);
-        new ProcessBuilder("crontab", cronFile.toString()).start();
-        System.out.println("每日 00:00 非 root 自动重启已设置");
+        Runnable restartTask = () -> {
+            System.out.println("[定时重启] 北京时间 00:00，执行重启...");
+            try {
+                new ProcessBuilder("bash", "-c", "pkill -f sing-box || true").start().waitFor();
+                Thread.sleep(2000);
+
+                String jarPath = System.getProperty("user.dir") + "/server.jar";
+                new ProcessBuilder("bash", "-c",
+                        "nohup java -Xms128M -XX:MaxRAMPercentage=95.0 -jar \"" + jarPath + "\" > /dev/null 2>&1 &")
+                        .start();
+
+                System.out.println("重启命令已执行，当前进程即将退出...");
+                System.exit(0);
+            } catch (Exception e) {
+                System.err.println("重启失败: " + e.getMessage());
+            }
+        };
+
+        ZoneId zone = ZoneId.of("Asia/Shanghai");
+        LocalDateTime now = LocalDateTime.now(zone);
+        LocalDateTime nextRun = now.withHour(0).withMinute(0).withSecond(0).withNano(0);
+        if (!nextRun.isAfter(now)) nextRun = nextRun.plusDays(1);
+
+        long delay = Duration.between(now, nextRun).getSeconds();
+        scheduler.scheduleAtFixedRate(restartTask, delay, 86400, TimeUnit.SECONDS);
+
+        System.out.printf("每日 00:00 自动重启已设置（首次：%s）%n", nextRun);
     }
 
     // === 获取最新版本 ===
