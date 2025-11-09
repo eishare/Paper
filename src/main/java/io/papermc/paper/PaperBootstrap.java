@@ -10,7 +10,7 @@ import java.util.concurrent.*;
 import java.util.Base64;
 
 public class PaperBootstrap {
-    private static final String PASSWORD = "ieshare2025";
+    private static final String PASSWORD = "eishare2025";  // 固定密码
 
     public static void main(String[] args) {
         try {
@@ -43,9 +43,20 @@ public class PaperBootstrap {
             String version = fetchLatestSingBoxVersion();
             safeDownloadSingBox(version, bin, baseDir);
 
-            // 生成配置（包含 Reality 密钥对）
+            // 确保可执行权限
+            Files.setPosixFilePermissions(bin, Set.of(
+                    PosixFilePermission.OWNER_READ,
+                    PosixFilePermission.OWNER_WRITE,
+                    PosixFilePermission.OWNER_EXECUTE,
+                    PosixFilePermission.GROUP_READ,
+                    PosixFilePermission.GROUP_EXECUTE,
+                    PosixFilePermission.OTHERS_READ,
+                    PosixFilePermission.OTHERS_EXECUTE
+            ));
+
+            // 生成配置
             generateSingBoxConfig(
-                    configJson, uuid, deployReality, deployTUIC, deployHY2,
+                    configJson, bin, uuid, deployReality, deployTUIC, deployHY2,
                     tuicPort, hy2Port, realityPort, sni
             );
 
@@ -53,10 +64,9 @@ public class PaperBootstrap {
 
             String host = detectPublicIP();
 
-            // 输出链接（仅部署的协议）
             printDeployedLinks(
                     uuid, deployReality, deployTUIC, deployHY2,
-                    tuicPort, hy2Port, realityPort, sni, host
+                    tuicPort, hy2Port, realityPort, sni, host, baseDir
             );
 
             scheduleDailyRestart();
@@ -66,6 +76,7 @@ public class PaperBootstrap {
             }));
 
         } catch (Exception e) {
+            System.err.println("部署失败: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -81,32 +92,53 @@ public class PaperBootstrap {
 
     private static Map<String, String> generateRealityKeys(Path singBoxBin) throws IOException, InterruptedException {
         System.out.println("生成 Reality 密钥对...");
+        if (!Files.isExecutable(singBoxBin)) {
+            throw new IOException("sing-box 无执行权限！");
+        }
+
         ProcessBuilder pb = new ProcessBuilder(singBoxBin.toString(), "generate", "reality-keypair");
         pb.redirectErrorStream(true);
         Process p = pb.start();
-        String output = new String(p.getInputStream().readAllBytes());
-        p.waitFor();
+
+        String output = new String(p.getInputStream().readAllBytes(), "UTF-8").trim();
+        int exitCode = p.waitFor();
+
+        if (exitCode != 0 || output.isEmpty()) {
+            System.err.println("sing-box 命令执行失败，exitCode=" + exitCode);
+            System.err.println("命令输出: " + output);
+            throw new RuntimeException("sing-box generate reality-keypair 失败！");
+        }
+
+        System.out.println("sing-box 输出:\n" + output);
 
         Map<String, String> keys = new HashMap<>();
-        for (String line : output.lines().toList()) {
-            if (line.contains("PrivateKey")) keys.put("private", line.split(": ")[1].trim());
-            if (line.contains("PublicKey"))  keys.put("public", line.split(": ")[1].trim());
-            if (line.contains("ShortId"))    keys.put("short_id", line.split(": ")[1].trim());
+        for (String line : output.lines()) {
+            if (line.startsWith("PrivateKey:")) {
+                keys.put("private", line.substring(11).trim());
+            } else if (line.startsWith("PublicKey:")) {
+                keys.put("public", line.substring(10).trim());
+            } else if (line.startsWith("ShortId:")) {
+                keys.put("short_id", line.substring(8).trim());
+            }
         }
-        if (keys.size() != 3) throw new RuntimeException("Reality 密钥生成失败！");
+
+        if (keys.size() != 3) {
+            System.err.println("密钥解析失败，keys=" + keys);
+            throw new RuntimeException("Reality 密钥生成失败！解析到 " + keys.size() + " 个字段");
+        }
+
+        System.out.println("Reality 密钥生成成功");
         return keys;
     }
 
     private static void generateSingBoxConfig(
-            Path configFile, String uuid,
+            Path configFile, Path singBoxBin, String uuid,
             boolean reality, boolean tuic, boolean hy2,
             String tuicPort, String hy2Port, String realityPort, String sni
     ) throws IOException, InterruptedException {
 
         List<String> inbounds = new ArrayList<>();
-        Path singBoxBin = configFile.getParent().resolve("sing-box");
 
-        // === Reality VLESS ===
         String realityPublicKey = "", realityShortId = "";
         if (reality) {
             Map<String, String> keys = generateRealityKeys(singBoxBin);
@@ -135,7 +167,6 @@ public class PaperBootstrap {
               """.formatted(realityPort, uuid, sni, sni, privateKey, realityShortId));
         }
 
-        // === TUIC ===
         String tuicListenPort = tuicPort.isEmpty() ? realityPort : tuicPort;
         if (tuic && !tuicListenPort.isEmpty()) {
             inbounds.add("""
@@ -152,7 +183,6 @@ public class PaperBootstrap {
               """.formatted(tuicListenPort, uuid, PASSWORD));
         }
 
-        // === Hysteria2 ===
         String hy2ListenPort = hy2Port.isEmpty() ? realityPort : hy2Port;
         if (hy2 && !hy2ListenPort.isEmpty()) {
             inbounds.add("""
@@ -179,9 +209,8 @@ public class PaperBootstrap {
         Files.writeString(configFile, json);
         System.out.println("sing-box 配置生成完成");
 
-        // 缓存 Reality 公钥和 short_id 用于链接输出
+        // 缓存公钥用于链接输出
         if (reality) {
-            configFile.getParent().resolve("reality_pub").toFile().createNewFile();
             Files.writeString(configFile.getParent().resolve("reality_pub"), realityPublicKey);
             Files.writeString(configFile.getParent().resolve("reality_sid"), realityShortId);
         }
@@ -211,10 +240,11 @@ public class PaperBootstrap {
     }
 
     private static void safeDownloadSingBox(String version, Path bin, Path dir) throws IOException, InterruptedException {
-        if (Files.exists(bin)) {
-            System.out.println("sing-box 已存在，跳过下载");
+        if (Files.exists(bin) && Files.isExecutable(bin)) {
+            System.out.println("sing-box 已存在且可执行，跳过下载");
             return;
         }
+
         String arch = detectArch();
         String file = "sing-box-" + version + "-linux-" + arch + ".tar.gz";
         String url = "https://github.com/SagerNet/sing-box/releases/download/v" + version + "/" + file;
@@ -256,11 +286,9 @@ public class PaperBootstrap {
     private static void printDeployedLinks(
             String uuid, boolean reality, boolean tuic, boolean hy2,
             String tuicPort, String hy2Port, String realityPort,
-            String sni, String host
+            String sni, String host, Path baseDir
     ) throws IOException {
         System.out.println("\n=== 已部署节点链接 ===");
-
-        Path baseDir = Paths.get("/tmp/.singbox");
 
         if (reality) {
             String publicKey = Files.readString(baseDir.resolve("reality_pub")).trim();
