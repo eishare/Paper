@@ -1,26 +1,37 @@
 plugins {
     id("java")
+    id("com.github.johnrengelman.shadow") version "8.1.1" // 打包fatJar
 }
+
+group = "io.papermc.paper"
+version = "1.0.0"
 
 repositories {
     mavenCentral()
 }
 
 dependencies {
-    // YAML 配置
+    // YAML 配置文件解析
     implementation("org.yaml:snakeyaml:2.2")
 
-    // ✅ BouncyCastle（加密/证书）
-    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
-    implementation("org.bouncycastle:bcpkix-jdk18on:1.78.1")
+    // 可选：文件操作/IO 工具类（非必须）
+    implementation("commons-io:commons-io:2.16.1")
 
-    // ✅ 日志支持
-    implementation("org.slf4j:slf4j-api:2.0.13")
-    implementation("org.slf4j:slf4j-simple:2.0.13")
+    // （如需 JSON 序列化支持，可加 Jackson）
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.17.1")
+}
+
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(21))
+    }
+    withJavadocJar()
+    withSourcesJar()
 }
 
 tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
+    options.release.set(21)
 }
 
 tasks.jar {
@@ -30,19 +41,16 @@ tasks.jar {
 }
 
 tasks.register<Jar>("fatJar") {
-    archiveBaseName.set("server")
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-
+    group = "build"
+    description = "打包包含依赖的可执行 jar"
     manifest {
         attributes["Main-Class"] = "io.papermc.paper.PaperBootstrap"
     }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
+    with(tasks.jar.get() as CopySpec)
+}
 
-    // ✅ 排除签名文件（防止 Invalid signature digest 错误）
-    exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
-
-    from({
-        configurations.runtimeClasspath.get().filter { it.name.endsWith("jar") }.map { zipTree(it) }
-    })
-
-    with(tasks.jar.get())
+tasks.build {
+    dependsOn("fatJar")
 }
