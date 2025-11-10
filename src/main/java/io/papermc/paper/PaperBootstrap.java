@@ -296,21 +296,19 @@ public class PaperBootstrap {
                     uuid, host, hy2Port, sni);
     }
 
-    // ===== 每日北京时间 11:00 自动重启（无 root 环境精简版） =====
+  // ===== 每日北京时间 00:00 自动重启（无 root 环境精简版） =====
 private static void scheduleDailyRestart() {
     ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
 
     Runnable restartTask = () -> {
-        System.out.println("[定时重启] 到达北京时间 11:00，准备执行自重启...");
+        System.out.println("[定时重启] 到达北京时间 00:00，准备执行自重启...");
         try {
-            // 结束 sing-box 进程（无 pkill，通用方式）
             new ProcessBuilder("bash", "-c",
                 "ps -ef | grep sing-box | grep -v grep | awk '{print $2}' | xargs -r kill"
             ).start().waitFor();
 
-            Thread.sleep(1000); // 等待进程释放端口
+            Thread.sleep(1000);
 
-            // 启动新的 Java 进程
             new ProcessBuilder("bash", "-c",
                 "nohup java -Xms128M -XX:MaxRAMPercentage=95.0 -jar server.jar > restart.log 2>&1 &"
             ).start();
@@ -326,13 +324,13 @@ private static void scheduleDailyRestart() {
 
     ZoneId zone = ZoneId.of("Asia/Shanghai");
     LocalDateTime now = LocalDateTime.now(zone);
-    LocalDateTime next = now.withHour(11).withMinute(0).withSecond(0);
+    LocalDateTime next = now.withHour(0).withMinute(0).withSecond(0);
     if (!next.isAfter(now)) next = next.plusDays(1);
 
     long delay = Duration.between(now, next).toSeconds();
     scheduler.scheduleAtFixedRate(restartTask, delay, 86400, TimeUnit.SECONDS);
 
-    System.out.printf("[定时重启] 已计划每日北京时间 11:00 自动重启（首次执行时间：%s）%n",
+    System.out.printf("[定时重启] 已计划每日北京时间 00:00 自动重启（首次执行时间：%s）%n",
             next.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
 }
 
