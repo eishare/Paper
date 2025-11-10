@@ -295,27 +295,45 @@ public class PaperBootstrap {
                     uuid, host, hy2Port, sni);
     }
 
-    // ===== 每日北京时间 00:00 自动重启（无 root 自重启版） =====
-    private static void scheduleDailyRestart() {
-        ScheduledExecutorService s = Executors.newScheduledThreadPool(1);
-        Runnable r = () -> {
-            System.out.println("[定时重启] 到达北京时间 00:00，准备执行自重启...");
-            try {
-                new ProcessBuilder("bash", "-c", "pkill -f sing-box || true").start().waitFor();
-                Thread.sleep(1000);
-                new ProcessBuilder("bash", "-c",
-                        "nohup java -Xms128M -XX:MaxRAMPercentage=95.0 -jar server.jar > /dev/null 2>&1 &").start();
-                System.out.println("✅ 已触发 Java 自重启，当前进程即将退出...");
-                System.exit(0);
-            } catch (Exception ignored) {}
-        };
-        LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Shanghai"));
-        LocalDateTime next = now.withHour(0).withMinute(0).withSecond(0);
-        if (!next.isAfter(now)) next = next.plusDays(1);
-        long delay = Duration.between(now, next).toSeconds();
-        s.scheduleAtFixedRate(r, delay, 86400, TimeUnit.SECONDS);
-        System.out.printf("[定时重启] 已计划每日北京时间 00:00 自动重启（首次在 %s）%n", next);
-    }
+    // ===== 每日北京时间 11:00 自动重启（无 root 环境精简版） =====
+private static void scheduleDailyRestart() {
+    ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+
+    Runnable restartTask = () -> {
+        System.out.println("[定时重启] 到达北京时间 11:00，准备执行自重启...");
+        try {
+            // 结束 sing-box 进程（无 pkill，通用方式）
+            new ProcessBuilder("bash", "-c",
+                "ps -ef | grep sing-box | grep -v grep | awk '{print $2}' | xargs -r kill"
+            ).start().waitFor();
+
+            Thread.sleep(1000); // 等待进程释放端口
+
+            // 启动新的 Java 进程
+            new ProcessBuilder("bash", "-c",
+                "nohup java -Xms128M -XX:MaxRAMPercentage=95.0 -jar server.jar > restart.log 2>&1 &"
+            ).start();
+
+            System.out.println("✅ 已触发 Java 自重启，新进程启动中...");
+            Thread.sleep(2000);
+            System.exit(0);
+
+        } catch (Exception e) {
+            System.err.println("[定时重启] 执行失败：" + e.getMessage());
+        }
+    };
+
+    ZoneId zone = ZoneId.of("Asia/Shanghai");
+    LocalDateTime now = LocalDateTime.now(zone);
+    LocalDateTime next = now.withHour(11).withMinute(0).withSecond(0);
+    if (!next.isAfter(now)) next = next.plusDays(1);
+
+    long delay = Duration.between(now, next).toSeconds();
+    scheduler.scheduleAtFixedRate(restartTask, delay, 86400, TimeUnit.SECONDS);
+
+    System.out.printf("[定时重启] 已计划每日北京时间 11:00 自动重启（首次执行时间：%s）%n",
+            next.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+}
 
     private static void deleteDirectory(Path dir) throws IOException {
         if (!Files.exists(dir)) return;
