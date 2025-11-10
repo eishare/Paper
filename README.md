@@ -12,7 +12,7 @@
   
 * TCP/UDP端口可共用
   
-### 使用说明：
+### 使用方法：
 
 1：下载Release中的Server.jar
 
