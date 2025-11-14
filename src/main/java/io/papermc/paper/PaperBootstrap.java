@@ -252,7 +252,6 @@ public class PaperBootstrap {
                     "private_key": "%s",
                     "short_id": [""]
                   }
-                    "client_fingerprint": "chrome"
                 }
               }
             """.formatted(realityPort, uuid, sni, sni, privateKey));
@@ -346,7 +345,7 @@ public class PaperBootstrap {
                                            String sni, String host, String publicKey) {
         System.out.println("\n=== ✅ 已部署节点链接 ===");
         if (vless)
-            System.out.printf("VLESS Reality:\nvless://%s@%s:%s?encryption=none&flow=xtls-rprx-vision&security=reality&sni=%s&fp=firefox&pbk=%s#Reality\n",
+            System.out.printf("VLESS Reality:\nvless://%s@%s:%s?encryption=none&flow=xtls-rprx-vision&security=reality&sni=%s&fp=chrome&pbk=%s#Reality\n",
                     uuid, host, realityPort, sni, publicKey);
         if (tuic)
             System.out.printf("\nTUIC:\ntuic://%s:eishare2025@%s:%s?sni=%s&alpn=h3&congestion_control=bbr&allowInsecure=1#TUIC\n",
