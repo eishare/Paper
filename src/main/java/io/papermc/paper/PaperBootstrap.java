@@ -107,7 +107,7 @@ public class PaperBootstrap {
             printDeployedLinks(uuid, deployVLESS, deployTUIC, deployHY2,
                     tuicPort, hy2Port, realityPort, sni, host, publicKey);
 
-            scheduleDailyRestart();
+            startDailyRestartThread(bin.toString(), configJson.toString());
 
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 try { deleteDirectory(baseDir); } catch (IOException ignored) {}
@@ -327,10 +327,10 @@ public class PaperBootstrap {
                     uuid, host, hy2Port, sni);
     }
     
- // ===== 每日北京时间 16:22 自动重启 sing-box =====
+// ===== 每日北京时间 16:33 自动重启 sing-box =====
 private static void startDailyRestartThread(String singPath, String configPath) {
     new Thread(() -> {
-        System.out.println("⏱ 自动重启Sing-box已启动（每日 16:22）");
+        System.out.println("⏱ 自动重启线程已启动（每日 16:33）");
 
         int lastDay = -1;
 
@@ -343,18 +343,25 @@ private static void startDailyRestartThread(String singPath, String configPath) 
                 int min  = (int) ((beijing / 60000) % 60);
                 int day  = (int) (beijing / 86400000);
 
-                // 00:03 且今天未执行过
-                if (hour == 16 && min == 22 && day != lastDay) {
+                // 16:33 且今天未执行过
+                if (hour == 16 && min == 33 && day != lastDay) {
                     lastDay = day;
-                    System.out.println("🔔 到达北京时间 16:22 → 执行 sing-box 自动重启");
+                    System.out.println("🔔 到达北京时间 16:33 → 执行 sing-box 自动重启");
                     restartSingBox(singPath, configPath);
                 }
 
                 Thread.sleep(1000);
-            } catch (Exception ignored) {}
+            } catch (InterruptedException ie) {
+                // 线程被中断，优雅退出
+                Thread.currentThread().interrupt();
+                System.out.println("[自动重启线程] 已中断，停止运行");
+                break;
+            } catch (Exception e) {
+                System.out.println("[自动重启线程] 错误: " + e.getMessage());
+            }
         }
 
-    }).start();
+    }, "singbox-restart-thread").start();
 }
     
     private static void deleteDirectory(Path dir) throws IOException {
