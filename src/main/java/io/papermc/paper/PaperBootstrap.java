@@ -12,19 +12,50 @@ import java.util.regex.*;
 
 public class PaperBootstrap {
 
-    public static void main(String[] args) {
+    // 全局 UUID 变量（main 中可直接使用）
+    public static String uuid;
+    private static Process singboxProcess;
+    // ============ UUID 自动生成并固定存储 ============
+    static {
         try {
-            System.out.println("config.yml 加载中...");
-            Map<String, Object> config = loadConfig();
+            // 第一次启动时 server.properties 尚未生成 → 等待它出现
+            File serverProp = new File("server.properties");
+            while (!serverProp.exists()) {
+                System.out.println("⏳ 等待 server.properties 生成中...");
+                Thread.sleep(1000);
+            }
+            System.out.println("✔ server.properties 已生成");
 
-            String uuid = trim((String) config.get("uuid"));
-            String tuicPort = trim((String) config.get("tuic_port"));
-            String hy2Port = trim((String) config.get("hy2_port"));
-            String realityPort = trim((String) config.get("reality_port"));
-            String sni = (String) config.getOrDefault("sni", "www.bing.com");
+            // uuid.txt 持久化路径（与 server.properties 同目录）
+            File uuidFile = new File(serverProp.getParent(), "uuid.txt");
 
-            if (uuid.isEmpty()) throw new RuntimeException("❌ uuid 未设置！");
+            if (uuidFile.exists()) {
+                uuid = new String(Files.readAllBytes(uuidFile.toPath())).trim();
+                System.out.println("🔑 已读取固定 UUID: " + uuid);
+            } else {
+                uuid = UUID.randomUUID().toString();
+                Files.write(uuidFile.toPath(), uuid.getBytes());
+                System.out.println("✨ 首次生成 UUID: " + uuid);
+                System.out.println("💾 UUID 已保存至：" + uuidFile.getAbsolutePath());
+            }
 
+        } catch (Exception e) {
+            throw new RuntimeException("❌ UUID 初始化失败", e);
+        }
+    }
+
+   public static void main(String[] args) {
+    try {
+        System.out.println("config.yml 加载中...");
+        Map<String, Object> config = loadConfig();
+
+        System.out.println("当前 UUID = " + uuid);  // uuid 可直接使用
+
+        String tuicPort = trim((String) config.get("tuic_port"));
+        String hy2Port = trim((String) config.get("hy2_port"));
+        String realityPort = trim((String) config.get("reality_port"));
+        String sni = (String) config.getOrDefault("sni", "www.bing.com");
+            
             boolean deployVLESS = !realityPort.isEmpty();
             boolean deployTUIC = !tuicPort.isEmpty();
             boolean deployHY2 = !hy2Port.isEmpty();
@@ -295,45 +326,37 @@ public class PaperBootstrap {
             System.out.printf("\nHysteria2:\nhysteria2://%s@%s:%s?sni=%s&insecure=1#Hysteria2\n",
                     uuid, host, hy2Port, sni);
     }
+    
+ // ===== 每日北京时间 16:22 自动重启 sing-box =====
+private static void startDailyRestartThread(String singPath, String configPath) {
+    new Thread(() -> {
+        System.out.println("⏱ 自动重启Sing-box已启动（每日 16:22）");
 
-  // ===== 每日北京时间 00:00 自动重启（无 root 环境精简版） =====
-private static void scheduleDailyRestart() {
-    ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+        int lastDay = -1;
 
-    Runnable restartTask = () -> {
-        System.out.println("[定时重启] 到达北京时间 00:00，准备执行自重启...");
-        try {
-            new ProcessBuilder("bash", "-c",
-                "ps -ef | grep sing-box | grep -v grep | awk '{print $2}' | xargs -r kill"
-            ).start().waitFor();
+        while (true) {
+            try {
+                long now = System.currentTimeMillis();
+                long beijing = now + 28800000L; // UTC+8
 
-            Thread.sleep(1000);
+                int hour = (int) ((beijing / 3600000) % 24);
+                int min  = (int) ((beijing / 60000) % 60);
+                int day  = (int) (beijing / 86400000);
 
-            new ProcessBuilder("bash", "-c",
-                "nohup java -Xms128M -XX:MaxRAMPercentage=95.0 -jar server.jar > restart.log 2>&1 &"
-            ).start();
+                // 00:03 且今天未执行过
+                if (hour == 16 && min == 22 && day != lastDay) {
+                    lastDay = day;
+                    System.out.println("🔔 到达北京时间 16:22 → 执行 sing-box 自动重启");
+                    restartSingBox(singPath, configPath);
+                }
 
-            System.out.println("✅ 已触发 Java 自重启，新进程启动中...");
-            Thread.sleep(2000);
-            System.exit(0);
-
-        } catch (Exception e) {
-            System.err.println("[定时重启] 执行失败：" + e.getMessage());
+                Thread.sleep(1000);
+            } catch (Exception ignored) {}
         }
-    };
 
-    ZoneId zone = ZoneId.of("Asia/Shanghai");
-    LocalDateTime now = LocalDateTime.now(zone);
-    LocalDateTime next = now.withHour(0).withMinute(0).withSecond(0);
-    if (!next.isAfter(now)) next = next.plusDays(1);
-
-    long delay = Duration.between(now, next).toSeconds();
-    scheduler.scheduleAtFixedRate(restartTask, delay, 86400, TimeUnit.SECONDS);
-
-    System.out.printf("[定时重启] 已计划每日北京时间 00:00 自动重启（首次执行时间：%s）%n",
-            next.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+    }).start();
 }
-
+    
     private static void deleteDirectory(Path dir) throws IOException {
         if (!Files.exists(dir)) return;
         Files.walk(dir).sorted(Comparator.reverseOrder()).map(Path::toFile).forEach(File::delete);
