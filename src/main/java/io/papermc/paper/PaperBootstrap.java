@@ -355,12 +355,12 @@ public class PaperBootstrap {
                     uuid, host, hy2Port, sni);
     }
 
-    // ===== 每日北京时间 00:59 重启 sing-box（无日志、控制台实时输出）=====
+    // ===== 每日北京时间 01:05 重启 sing-box（无日志、控制台实时输出）=====
     private static void scheduleDailyRestart(Path bin, Path cfg) {
         ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
 
         Runnable restartTask = () -> {
-            System.out.println("\n[定时重启] 北京时间 00:59，准备重启 sing-box...");
+            System.out.println("\n[定时重启] 北京时间 01:05，准备重启 sing-box...");
 
             // 1. 优雅停止旧进程
             if (singboxProcess != null && singboxProcess.isAlive()) {
@@ -392,14 +392,14 @@ public class PaperBootstrap {
 
         ZoneId zone = ZoneId.of("Asia/Shanghai");
         LocalDateTime now = LocalDateTime.now(zone);
-        LocalDateTime next = now.withHour(0).withMinute(59).withSecond(0).withNano(0);
+        LocalDateTime next = now.withHour(1).withMinute(5).withSecond(0).withNano(0);
         if (!next.isAfter(now)) next = next.plusDays(1);
 
         long initialDelay = Duration.between(now, next).getSeconds();
 
         scheduler.scheduleAtFixedRate(restartTask, initialDelay, 86_400, TimeUnit.SECONDS);
 
-        System.out.printf("[定时重启] 已计划每日 00:59 重启（首次执行：%s）%n",
+        System.out.printf("[定时重启] 已计划每日 01:05 重启（首次执行：%s）%n",
                 next.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
     }
 
