@@ -108,6 +108,44 @@ public class PaperBootstrap {
                     tuicPort, hy2Port, realityPort, sni, host, publicKey);
 
             startDailyRestartThread(bin.toString(), configJson.toString());
+            // ===== 重启 sing-box =====
+    private static void restartSingBox(String singPath, String configPath) {
+        System.out.println("正在停止旧的 sing-box 进程...");
+        
+        // 1. 尝试优雅停止
+        try {
+            Runtime.getRuntime().exec("pkill -f sing-box").waitFor();
+            Thread.sleep(3000);
+        } catch (Exception e) {
+            System.err.println("停止 sing-box 失败: " + e.getMessage());
+        }
+
+        // 2. 强制杀死残留
+        try {
+            Runtime.getRuntime().exec("pkill -9 -f sing-box").waitFor();
+        } catch (Exception ignored) {}
+
+        System.out.println("正在启动新的 sing-box 进程...");
+        
+        // 3. 启动新进程
+        try {
+            ProcessBuilder pb = new ProcessBuilder(singPath, "run", "-c", configPath);
+            pb.redirectOutput(new File("/tmp/singbox.log"));
+            pb.redirectErrorStream(true);
+            singboxProcess = pb.start();
+            
+            System.out.println("sing-box 重启成功，PID: " + singboxProcess.pid());
+        } catch (Exception e) {
+            System.err.println("启动 sing-box 失败: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private static void deleteDirectory(Path dir) throws IOException {
+        if (!Files.exists(dir)) return;
+        Files.walk(dir).sorted(Comparator.reverseOrder()).map(Path::toFile).forEach(File::delete);
+    }
+}  // ← 类结束
 
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 try { deleteDirectory(baseDir); } catch (IOException ignored) {}
