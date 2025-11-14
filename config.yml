@@ -1,6 +1,5 @@
 # config.yml —— 所有配置集中于此
-uuid: "6058aae7-c6ae-4daa-9510-4bcd9c52555d"                       #输入uuid
-tuic_port: "25690"                  #输入端口=确认部署
+tuic_port: ""                  #输入端口=确认部署
 hy2_port: ""                   #输入端口=确认部署
-reality_port: "25690"               #输入端口=确认部署
+reality_port: ""               #输入端口=确认部署
 sni: "www.bing.com"
