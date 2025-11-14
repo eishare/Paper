@@ -252,6 +252,7 @@ public class PaperBootstrap {
                     "private_key": "%s",
                     "short_id": [""]
                   }
+                    "client_fingerprint": "chrome"
                 }
               }
             """.formatted(realityPort, uuid, sni, sni, privateKey));
@@ -324,7 +325,7 @@ public class PaperBootstrap {
         ProcessBuilder pb = new ProcessBuilder(bin.toString(), "run", "-c", cfg.toString());
         pb.redirectErrorStream(true);
         // 不写日志 → 直接输出到控制台
-        pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+       pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
         Process p = pb.start();
         Thread.sleep(1500);
         System.out.println("sing-box 已启动，PID: " + p.pid());
@@ -380,7 +381,8 @@ public class PaperBootstrap {
             try {
                 ProcessBuilder pb = new ProcessBuilder(bin.toString(), "run", "-c", cfg.toString());
                 pb.redirectErrorStream(true);
-                pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);  // 关键：输出到控制台
+                pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+                pb.redirectError(ProcessBuilder.Redirect.DISCARD);
                 singboxProcess = pb.start();
                 System.out.println("sing-box 重启成功，新 PID: " + singboxProcess.pid());
             } catch (Exception e) {
