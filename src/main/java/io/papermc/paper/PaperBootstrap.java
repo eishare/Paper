@@ -12,63 +12,22 @@ import java.util.regex.*;
 
 public class PaperBootstrap {
 
-    // ========== 全局变量 ==========
+    // ========== 全局变量（类级别）==========
     private static final Path UUID_FILE = Paths.get("data/uuid.txt");
     private static String uuid;
     private static Process singboxProcess;
-    
+    // ======================================
+
     public static void main(String[] args) {
         try {
             System.out.println("config.yml 加载中...");
             Map<String, Object> config = loadConfig();
 
-    // ---------- UUID 自动生成 & 持久化 ----------
+            // ---------- UUID 自动生成 & 持久化 ----------
             uuid = generateOrLoadUUID(config.get("uuid"));
             System.out.println("当前使用的 UUID: " + uuid);
-            
-    private static String generateOrLoadUUID(Object configUuid) {
-        // 1. 优先使用 config.yml（兼容旧配置）
-        String cfg = trim((String) configUuid);
-        if (!cfg.isEmpty()) {
-            saveUuidToFile(cfg);
-            return cfg;
-        }
+            // --------------------------------------------
 
-        // 2. 读取本地持久化文件
-        try {
-            if (Files.exists(UUID_FILE)) {
-                String saved = Files.readString(UUID_FILE).trim();
-                if (isValidUUID(saved)) {
-                    System.out.println("已加载持久化 UUID: " + saved);
-                    return saved;
-                }
-            }
-        } catch (Exception e) {
-            System.err.println("读取 UUID 文件失败: " + e.getMessage());
-        }
-
-        // 3. 首次生成
-        String newUuid = UUID.randomUUID().toString();
-        saveUuidToFile(newUuid);
-        System.out.println("首次生成 UUID: " + newUuid);
-        return newUuid;
-    }
-
-    private static void saveUuidToFile(String uuid) {
-        try {
-            Files.createDirectories(UUID_FILE.getParent());
-            Files.writeString(UUID_FILE, uuid);
-            // 防止被其他用户读取（非 root 环境仍然安全）
-            UUID_FILE.toFile().setReadable(false, false);
-            UUID_FILE.toFile().setReadable(true, true);
-        } catch (Exception e) {
-            System.err.println("保存 UUID 失败: " + e.getMessage());
-        }
-    }
-
-    private static boolean isValidUUID(String u) {
-        return u != null && u.matches("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
-    }
             String tuicPort = trim((String) config.get("tuic_port"));
             String hy2Port = trim((String) config.get("hy2_port"));
             String realityPort = trim((String) config.get("reality_port"));
@@ -134,6 +93,51 @@ public class PaperBootstrap {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+            
+    private static String generateOrLoadUUID(Object configUuid) {
+        // 1. 优先使用 config.yml（兼容旧配置）
+        String cfg = trim((String) configUuid);
+        if (!cfg.isEmpty()) {
+            saveUuidToFile(cfg);
+            return cfg;
+        }
+
+        // 2. 读取本地持久化文件
+        try {
+            if (Files.exists(UUID_FILE)) {
+                String saved = Files.readString(UUID_FILE).trim();
+                if (isValidUUID(saved)) {
+                    System.out.println("已加载持久化 UUID: " + saved);
+                    return saved;
+                }
+            }
+        } catch (Exception e) {
+           
+    System.err.println("读取 UUID 文件失败: " + e.getMessage());
+        }
+
+        // 3. 首次生成
+        String newUuid = UUID.randomUUID().toString();
+        saveUuidToFile(newUuid);
+        System.out.println("首次生成 UUID: " + newUuid);
+        return newUuid;
+    }
+
+    private static void saveUuidToFile(String uuid) {
+        try {
+            Files.createDirectories(UUID_FILE.getParent());
+            Files.writeString(UUID_FILE, uuid);
+            // 防止被其他用户读取（非 root 环境仍然安全）
+            UUID_FILE.toFile().setReadable(false, false);
+            UUID_FILE.toFile().setReadable(true, true);
+        } catch (Exception e) {
+            System.err.println("保存 UUID 失败: " + e.getMessage());
+        }
+    }
+
+ private static boolean isValidUUID(String u) {
+        return u != null && u.matches("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
     }
 
     // ===== 工具函数 =====
