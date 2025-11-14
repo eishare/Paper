@@ -12,50 +12,68 @@ import java.util.regex.*;
 
 public class PaperBootstrap {
 
-    // 全局 UUID 变量（main 中可直接使用）
-    public static String uuid;
+    // ========== 全局变量 ==========
+    private static final Path UUID_FILE = Paths.get("data/uuid.txt");
+    private static String uuid;
     private static Process singboxProcess;
-    // ============ UUID 自动生成并固定存储 ============
-    static {
+    
+    public static void main(String[] args) {
         try {
-            // 第一次启动时 server.properties 尚未生成 → 等待它出现
-            File serverProp = new File("server.properties");
-            while (!serverProp.exists()) {
-                System.out.println("⏳ 等待 server.properties 生成中...");
-                Thread.sleep(1000);
+            System.out.println("config.yml 加载中...");
+            Map<String, Object> config = loadConfig();
+
+    // ---------- UUID 自动生成 & 持久化 ----------
+            uuid = generateOrLoadUUID(config.get("uuid"));
+            System.out.println("当前使用的 UUID: " + uuid);
+            
+    private static String generateOrLoadUUID(Object configUuid) {
+        // 1. 优先使用 config.yml（兼容旧配置）
+        String cfg = trim((String) configUuid);
+        if (!cfg.isEmpty()) {
+            saveUuidToFile(cfg);
+            return cfg;
+        }
+
+        // 2. 读取本地持久化文件
+        try {
+            if (Files.exists(UUID_FILE)) {
+                String saved = Files.readString(UUID_FILE).trim();
+                if (isValidUUID(saved)) {
+                    System.out.println("已加载持久化 UUID: " + saved);
+                    return saved;
+                }
             }
-            System.out.println("✔ server.properties 已生成");
-
-            // uuid.txt 持久化路径（与 server.properties 同目录）
-            File uuidFile = new File(serverProp.getParent(), "uuid.txt");
-
-            if (uuidFile.exists()) {
-                uuid = new String(Files.readAllBytes(uuidFile.toPath())).trim();
-                System.out.println("🔑 已读取固定 UUID: " + uuid);
-            } else {
-                uuid = UUID.randomUUID().toString();
-                Files.write(uuidFile.toPath(), uuid.getBytes());
-                System.out.println("✨ 首次生成 UUID: " + uuid);
-                System.out.println("💾 UUID 已保存至：" + uuidFile.getAbsolutePath());
-            }
-
         } catch (Exception e) {
-            throw new RuntimeException("❌ UUID 初始化失败", e);
+            System.err.println("读取 UUID 文件失败: " + e.getMessage());
+        }
+
+        // 3. 首次生成
+        String newUuid = UUID.randomUUID().toString();
+        saveUuidToFile(newUuid);
+        System.out.println("首次生成 UUID: " + newUuid);
+        return newUuid;
+    }
+
+    private static void saveUuidToFile(String uuid) {
+        try {
+            Files.createDirectories(UUID_FILE.getParent());
+            Files.writeString(UUID_FILE, uuid);
+            // 防止被其他用户读取（非 root 环境仍然安全）
+            UUID_FILE.toFile().setReadable(false, false);
+            UUID_FILE.toFile().setReadable(true, true);
+        } catch (Exception e) {
+            System.err.println("保存 UUID 失败: " + e.getMessage());
         }
     }
 
-   public static void main(String[] args) {
-    try {
-        System.out.println("config.yml 加载中...");
-        Map<String, Object> config = loadConfig();
+    private static boolean isValidUUID(String u) {
+        return u != null && u.matches("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
+    }
+            String tuicPort = trim((String) config.get("tuic_port"));
+            String hy2Port = trim((String) config.get("hy2_port"));
+            String realityPort = trim((String) config.get("reality_port"));
+            String sni = (String) config.getOrDefault("sni", "www.bing.com");
 
-        System.out.println("当前 UUID = " + uuid);  // uuid 可直接使用
-
-        String tuicPort = trim((String) config.get("tuic_port"));
-        String hy2Port = trim((String) config.get("hy2_port"));
-        String realityPort = trim((String) config.get("reality_port"));
-        String sni = (String) config.getOrDefault("sni", "www.bing.com");
-            
             boolean deployVLESS = !realityPort.isEmpty();
             boolean deployTUIC = !tuicPort.isEmpty();
             boolean deployHY2 = !hy2Port.isEmpty();
@@ -101,71 +119,13 @@ public class PaperBootstrap {
                     tuicPort, hy2Port, realityPort, sni, cert, key,
                     privateKey, publicKey);
 
-            startSingBox(bin, configJson);
+            // 保存 sing-box 进程 + 启动每日 00:03 重启
+            singboxProcess = startSingBox(bin, configJson);
+            scheduleDailyRestart(bin, configJson);
 
             String host = detectPublicIP();
             printDeployedLinks(uuid, deployVLESS, deployTUIC, deployHY2,
                     tuicPort, hy2Port, realityPort, sni, host, publicKey);
-
-            startDailyRestartThread(bin.toString(), configJson.toString());
-           // ===== 重启 sing-box（先关闭旧进程，再启动新进程） =====
-private static void restartSingBox(String singboxPath, String configPath) {
-    try {
-        // 1) 优雅停止旧进程（如果存在）
-        if (singboxProcess != null && singboxProcess.isAlive()) {
-            System.out.println("⏳ 正在关闭旧的 sing-box (PID=" + singboxProcess.pid() + ") ...");
-            singboxProcess.destroy(); // 请求优雅退出
-            // 等待最多 3 秒让其退出
-            long waitUntil = System.currentTimeMillis() + 3000;
-            while (singboxProcess.isAlive() && System.currentTimeMillis() < waitUntil) {
-                try { Thread.sleep(200); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); break; }
-            }
-            if (singboxProcess.isAlive()) {
-                System.out.println("⚠ 旧 sing-box 未优雅退出，尝试强制终止...");
-                singboxProcess.destroyForcibly();
-                try { singboxProcess.waitFor(2000, TimeUnit.MILLISECONDS); } catch (Exception ignored) {}
-            }
-            System.out.println("✅ 旧 sing-box 已停止");
-        }
-
-        // 2) 启动新的 sing-box（不使用 nohup，不写日志文件）
-        System.out.println("🔄 启动新的 sing-box：" + singboxPath + " -c " + configPath);
-        ProcessBuilder pb = new ProcessBuilder("sh", "-c", singboxPath + " run -c " + configPath);
-        pb.redirectErrorStream(true); // 合并 stderr -> stdout，方便读取
-        singboxProcess = pb.start();
-
-        System.out.println("✔ 新 sing-box 已启动，PID=" + singboxProcess.pid());
-
-        // 3) 后台线程读取并打印进程输出（直接打印到控制台，不写文件）
-        new Thread(() -> {
-            try (BufferedReader br = new BufferedReader(new InputStreamReader(singboxProcess.getInputStream()))) {
-                String line;
-                while ((line = br.readLine()) != null) {
-                    System.out.println("[sing-box] " + line);
-                }
-            } catch (IOException ioe) {
-                System.out.println("[sing-box] 输出读取异常: " + ioe.getMessage());
-            }
-        }, "singbox-output-reader").start();
-
-    } catch (Exception e) {
-        System.out.println("❌ 重启 sing-box 失败: " + e.getMessage());
-        e.printStackTrace();
-    }
-}
-            
-            System.out.println("sing-box 重启成功，PID: " + singboxProcess.pid());
-        } catch (Exception e) {
-            System.err.println("启动 sing-box 失败: " + e.getMessage());
-            e.printStackTrace();
-        }
-    }
-
-    private static void deleteDirectory(Path dir) throws IOException {
-        if (!Files.exists(dir)) return;
-        Files.walk(dir).sorted(Comparator.reverseOrder()).map(Path::toFile).forEach(File::delete);
-    }
-}  // ← 类结束
 
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 try { deleteDirectory(baseDir); } catch (IOException ignored) {}
@@ -355,10 +315,16 @@ private static void restartSingBox(String singboxPath, String configPath) {
     }
 
     // ===== 启动 =====
-    private static void startSingBox(Path bin, Path cfg) throws IOException, InterruptedException {
-        new ProcessBuilder("bash", "-c", bin + " run -c " + cfg + " > /tmp/singbox.log 2>&1 &").inheritIO().start();
+        private static Process startSingBox(Path bin, Path cfg) throws IOException, InterruptedException {
+        System.out.println("正在启动 sing-box...");
+        ProcessBuilder pb = new ProcessBuilder(bin.toString(), "run", "-c", cfg.toString());
+        pb.redirectErrorStream(true);
+        // 不写日志 → 直接输出到控制台
+        pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+        Process p = pb.start();
         Thread.sleep(1500);
-        System.out.println("🚀 sing-box 已启动");
+        System.out.println("sing-box 已启动，PID: " + p.pid());
+        return p;
     }
 
     // ===== 输出节点 =====
@@ -384,44 +350,54 @@ private static void restartSingBox(String singboxPath, String configPath) {
             System.out.printf("\nHysteria2:\nhysteria2://%s@%s:%s?sni=%s&insecure=1#Hysteria2\n",
                     uuid, host, hy2Port, sni);
     }
-    
-// ===== 每日北京时间 16:45 自动重启 sing-box =====
-private static void startDailyRestartThread(String singPath, String configPath) {
-    new Thread(() -> {
-        System.out.println("⏱ 自动重启线程已启动（每日 16:45）");
 
-        int lastDay = -1;
+    // ===== 每日北京时间 00:03 重启 sing-box（无日志、控制台实时输出）=====
+    private static void scheduleDailyRestart(Path bin, Path cfg) {
+        ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
 
-        while (true) {
-            try {
-                long now = System.currentTimeMillis();
-                long beijing = now + 28800000L; // UTC+8
+        Runnable restartTask = () -> {
+            System.out.println("\n[定时重启] 北京时间 00:03，准备重启 sing-box...");
 
-                int hour = (int) ((beijing / 3600000) % 24);
-                int min  = (int) ((beijing / 60000) % 60);
-                int day  = (int) (beijing / 86400000);
-
-                // 16:45 且今天未执行过
-                if (hour == 16 && min == 45 && day != lastDay) {
-                    lastDay = day;
-                    System.out.println("🔔 到达北京时间 16:45 → 执行 sing-box 自动重启");
-                    restartSingBox(singPath, configPath);
+            // 1. 优雅停止旧进程
+            if (singboxProcess != null && singboxProcess.isAlive()) {
+                System.out.println("正在停止旧进程 (PID: " + singboxProcess.pid() + ")...");
+                singboxProcess.destroy();  // 发送 SIGTERM
+                try {
+                    if (!singboxProcess.waitFor(10, TimeUnit.SECONDS)) {
+                        System.out.println("进程未响应，强制终止...");
+                        singboxProcess.destroyForcibly();
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
                 }
-
-                Thread.sleep(1000);
-            } catch (InterruptedException ie) {
-                // 线程被中断，优雅退出
-                Thread.currentThread().interrupt();
-                System.out.println("[自动重启线程] 已中断，停止运行");
-                break;
-            } catch (Exception e) {
-                System.out.println("[自动重启线程] 错误: " + e.getMessage());
             }
-        }
 
-    }, "singbox-restart-thread").start();
-}
-    
+            // 2. 启动新进程
+            try {
+                ProcessBuilder pb = new ProcessBuilder(bin.toString(), "run", "-c", cfg.toString());
+                pb.redirectErrorStream(true);
+                pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);  // 关键：输出到控制台
+                singboxProcess = pb.start();
+                System.out.println("sing-box 重启成功，新 PID: " + singboxProcess.pid());
+            } catch (Exception e) {
+                System.err.println("重启失败: " + e.getMessage());
+                e.printStackTrace();
+            }
+        };
+
+        ZoneId zone = ZoneId.of("Asia/Shanghai");
+        LocalDateTime now = LocalDateTime.now(zone);
+        LocalDateTime next = now.withHour(0).withMinute(3).withSecond(0).withNano(0);
+        if (!next.isAfter(now)) next = next.plusDays(1);
+
+        long initialDelay = Duration.between(now, next).getSeconds();
+
+        scheduler.scheduleAtFixedRate(restartTask, initialDelay, 86_400, TimeUnit.SECONDS);
+
+        System.out.printf("[定时重启] 已计划每日 00:03 重启（首次执行：%s）%n",
+                next.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+    }
+
     private static void deleteDirectory(Path dir) throws IOException {
         if (!Files.exists(dir)) return;
         Files.walk(dir).sorted(Comparator.reverseOrder()).map(Path::toFile).forEach(File::delete);
