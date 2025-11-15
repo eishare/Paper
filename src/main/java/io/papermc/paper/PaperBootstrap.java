@@ -360,7 +360,7 @@ public class PaperBootstrap {
         ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
 
         Runnable restartTask = () -> {
-            System.out.println("\n[定时重启] 北京时间 00:03，准备重启 sing-box...");
+            System.out.println("\n[定时重启Sing-box] 北京时间 00:03，准备重启 sing-box...");
 
             // 1. 优雅停止旧进程
             if (singboxProcess != null && singboxProcess.isAlive()) {
@@ -399,7 +399,7 @@ public class PaperBootstrap {
 
         scheduler.scheduleAtFixedRate(restartTask, initialDelay, 86_400, TimeUnit.SECONDS);
 
-        System.out.printf("[定时重启] 已计划每日 00:03 重启（首次执行：%s）%n",
+        System.out.printf("[定时重启Sing-box] 已计划每日 00:03 重启（首次执行：%s）%n",
                 next.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
     }
 
