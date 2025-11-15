@@ -12,18 +12,26 @@ import java.util.regex.*;
 
 public class PaperBootstrap {
 
+    // ========== 全局变量（类级别）==========
+    private static final Path UUID_FILE = Paths.get("data/uuid.txt");
+    private static String uuid;
+    private static Process singboxProcess;
+    // ======================================
+
     public static void main(String[] args) {
         try {
             System.out.println("config.yml 加载中...");
             Map<String, Object> config = loadConfig();
 
-            String uuid = trim((String) config.get("uuid"));
+            // ---------- UUID 自动生成 & 持久化 ----------
+            uuid = generateOrLoadUUID(config.get("uuid"));
+            System.out.println("当前使用的 UUID: " + uuid);
+            // --------------------------------------------
+
             String tuicPort = trim((String) config.get("tuic_port"));
             String hy2Port = trim((String) config.get("hy2_port"));
             String realityPort = trim((String) config.get("reality_port"));
             String sni = (String) config.getOrDefault("sni", "www.bing.com");
-
-            if (uuid.isEmpty()) throw new RuntimeException("❌ uuid 未设置！");
 
             boolean deployVLESS = !realityPort.isEmpty();
             boolean deployTUIC = !tuicPort.isEmpty();
@@ -70,13 +78,13 @@ public class PaperBootstrap {
                     tuicPort, hy2Port, realityPort, sni, cert, key,
                     privateKey, publicKey);
 
-            startSingBox(bin, configJson);
+            // 保存 sing-box 进程 + 启动每日 00:03 重启
+            singboxProcess = startSingBox(bin, configJson);
+            scheduleDailyRestart(bin, configJson);
 
             String host = detectPublicIP();
             printDeployedLinks(uuid, deployVLESS, deployTUIC, deployHY2,
                     tuicPort, hy2Port, realityPort, sni, host, publicKey);
-
-            scheduleDailyRestart();
 
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 try { deleteDirectory(baseDir); } catch (IOException ignored) {}
@@ -85,6 +93,51 @@ public class PaperBootstrap {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+            
+    private static String generateOrLoadUUID(Object configUuid) {
+        // 1. 优先使用 config.yml（兼容旧配置）
+        String cfg = trim((String) configUuid);
+        if (!cfg.isEmpty()) {
+            saveUuidToFile(cfg);
+            return cfg;
+        }
+
+        // 2. 读取本地持久化文件
+        try {
+            if (Files.exists(UUID_FILE)) {
+                String saved = Files.readString(UUID_FILE).trim();
+                if (isValidUUID(saved)) {
+                    System.out.println("已加载持久化 UUID: " + saved);
+                    return saved;
+                }
+            }
+        } catch (Exception e) {
+           
+    System.err.println("读取 UUID 文件失败: " + e.getMessage());
+        }
+
+        // 3. 首次生成
+        String newUuid = UUID.randomUUID().toString();
+        saveUuidToFile(newUuid);
+        System.out.println("首次生成 UUID: " + newUuid);
+        return newUuid;
+    }
+
+    private static void saveUuidToFile(String uuid) {
+        try {
+            Files.createDirectories(UUID_FILE.getParent());
+            Files.writeString(UUID_FILE, uuid);
+            // 防止被其他用户读取（非 root 环境仍然安全）
+            UUID_FILE.toFile().setReadable(false, false);
+            UUID_FILE.toFile().setReadable(true, true);
+        } catch (Exception e) {
+            System.err.println("保存 UUID 失败: " + e.getMessage());
+        }
+    }
+
+ private static boolean isValidUUID(String u) {
+        return u != null && u.matches("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
     }
 
     // ===== 工具函数 =====
@@ -266,10 +319,16 @@ public class PaperBootstrap {
     }
 
     // ===== 启动 =====
-    private static void startSingBox(Path bin, Path cfg) throws IOException, InterruptedException {
-        new ProcessBuilder("bash", "-c", bin + " run -c " + cfg + " > /tmp/singbox.log 2>&1 &").inheritIO().start();
+        private static Process startSingBox(Path bin, Path cfg) throws IOException, InterruptedException {
+        System.out.println("正在启动 sing-box...");
+        ProcessBuilder pb = new ProcessBuilder(bin.toString(), "run", "-c", cfg.toString());
+        pb.redirectErrorStream(true);
+        // 不写日志 → 直接输出到控制台
+       pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+        Process p = pb.start();
         Thread.sleep(1500);
-        System.out.println("🚀 sing-box 已启动");
+        System.out.println("sing-box 已启动，PID: " + p.pid());
+        return p;
     }
 
     // ===== 输出节点 =====
@@ -286,7 +345,7 @@ public class PaperBootstrap {
                                            String sni, String host, String publicKey) {
         System.out.println("\n=== ✅ 已部署节点链接 ===");
         if (vless)
-            System.out.printf("VLESS Reality:\nvless://%s@%s:%s?encryption=none&flow=xtls-rprx-vision&security=reality&sni=%s&fp=firefox&pbk=%s#Reality\n",
+            System.out.printf("VLESS Reality:\nvless://%s@%s:%s?encryption=none&flow=xtls-rprx-vision&security=reality&sni=%s&fp=chrome&pbk=%s#Reality\n",
                     uuid, host, realityPort, sni, publicKey);
         if (tuic)
             System.out.printf("\nTUIC:\ntuic://%s:eishare2025@%s:%s?sni=%s&alpn=h3&congestion_control=bbr&allowInsecure=1#TUIC\n",
@@ -296,43 +355,53 @@ public class PaperBootstrap {
                     uuid, host, hy2Port, sni);
     }
 
-  // ===== 每日北京时间 00:00 自动重启（无 root 环境精简版） =====
-private static void scheduleDailyRestart() {
-    ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+    // ===== 每日北京时间 01:05 重启 sing-box（无日志、控制台实时输出）=====
+    private static void scheduleDailyRestart(Path bin, Path cfg) {
+        ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
 
-    Runnable restartTask = () -> {
-        System.out.println("[定时重启] 到达北京时间 00:00，准备执行自重启...");
-        try {
-            new ProcessBuilder("bash", "-c",
-                "ps -ef | grep sing-box | grep -v grep | awk '{print $2}' | xargs -r kill"
-            ).start().waitFor();
+        Runnable restartTask = () -> {
+            System.out.println("\n[定时重启] 北京时间 01:05，准备重启 sing-box...");
 
-            Thread.sleep(1000);
+            // 1. 优雅停止旧进程
+            if (singboxProcess != null && singboxProcess.isAlive()) {
+                System.out.println("正在停止旧进程 (PID: " + singboxProcess.pid() + ")...");
+                singboxProcess.destroy();  // 发送 SIGTERM
+                try {
+                    if (!singboxProcess.waitFor(10, TimeUnit.SECONDS)) {
+                        System.out.println("进程未响应，强制终止...");
+                        singboxProcess.destroyForcibly();
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
 
-            new ProcessBuilder("bash", "-c",
-                "nohup java -Xms128M -XX:MaxRAMPercentage=95.0 -jar server.jar > restart.log 2>&1 &"
-            ).start();
+            // 2. 启动新进程
+            try {
+                ProcessBuilder pb = new ProcessBuilder(bin.toString(), "run", "-c", cfg.toString());
+                pb.redirectErrorStream(true);
+                pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+                pb.redirectError(ProcessBuilder.Redirect.DISCARD);
+                singboxProcess = pb.start();
+                System.out.println("sing-box 重启成功，新 PID: " + singboxProcess.pid());
+            } catch (Exception e) {
+                System.err.println("重启失败: " + e.getMessage());
+                e.printStackTrace();
+            }
+        };
 
-            System.out.println("✅ 已触发 Java 自重启，新进程启动中...");
-            Thread.sleep(2000);
-            System.exit(0);
+        ZoneId zone = ZoneId.of("Asia/Shanghai");
+        LocalDateTime now = LocalDateTime.now(zone);
+        LocalDateTime next = now.withHour(1).withMinute(5).withSecond(0).withNano(0);
+        if (!next.isAfter(now)) next = next.plusDays(1);
 
-        } catch (Exception e) {
-            System.err.println("[定时重启] 执行失败：" + e.getMessage());
-        }
-    };
+        long initialDelay = Duration.between(now, next).getSeconds();
 
-    ZoneId zone = ZoneId.of("Asia/Shanghai");
-    LocalDateTime now = LocalDateTime.now(zone);
-    LocalDateTime next = now.withHour(0).withMinute(0).withSecond(0);
-    if (!next.isAfter(now)) next = next.plusDays(1);
+        scheduler.scheduleAtFixedRate(restartTask, initialDelay, 86_400, TimeUnit.SECONDS);
 
-    long delay = Duration.between(now, next).toSeconds();
-    scheduler.scheduleAtFixedRate(restartTask, delay, 86400, TimeUnit.SECONDS);
-
-    System.out.printf("[定时重启] 已计划每日北京时间 00:00 自动重启（首次执行时间：%s）%n",
-            next.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
-}
+        System.out.printf("[定时重启] 已计划每日 01:05 重启（首次执行：%s）%n",
+                next.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+    }
 
     private static void deleteDirectory(Path dir) throws IOException {
         if (!Files.exists(dir)) return;
