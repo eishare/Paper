@@ -1,4 +1,5 @@
-# config.yml —— 所有配置集中于此
+# config.yml
+
 tuic_port: ""                  #输入端口=确认部署
 hy2_port: ""                   #输入端口=确认部署
 reality_port: ""               #输入端口=确认部署
