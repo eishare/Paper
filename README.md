@@ -6,6 +6,8 @@
 * Server.jar仅有340kb，极速完成部署
 
 * 去除：哪吒、argo隧道；保留3种协议：tuic、hy2、vless+xtls+reality
+
+* uuid自动生成
   
 * 自动保活：每天夜间零时3分（00:03）自动执行一次singbox重启，清除缓存
   
