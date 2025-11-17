@@ -1,4 +1,4 @@
-### Java-Paper说明-无需再fork本项目！
+### Java-Paper说明-无需Fork本项目！
 
 ### （已精简为：Java 启动器 + Sing-box 多协议内核伪装方案）
 
