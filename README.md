@@ -5,7 +5,7 @@
 
 * Server.jar仅有340kb，极速完成部署
 
-* 去除：哪吒、argo隧道；保留3种协议：tuic、hy2、vless+xtls+reality
+* 去除：哪吒、argo隧道；保留3种协议：tuic、hy2、vless+tcp+reality
 
 * uuid自动生成
   
