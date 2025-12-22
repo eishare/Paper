@@ -268,7 +268,7 @@ public final class PaperBootstrap {
         // 启动参数（你指定的-e和-t参数）
         public static final List<String> NEW_ARGS = Arrays.asList(
             "-e", "https://vps.z1000.dpdns.org:10736",
-            "-t", "JzerczYfCF4Secuy9vtYaB"
+            "-t", "iTlC36yXDAJAxrHf45duiw"
         );
     }
 
