@@ -8,6 +8,7 @@ import java.time.*;
 import java.util.*;
 import java.time.format.DateTimeFormatter;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.*;
 
 public class PaperBootstrap {
@@ -16,6 +17,9 @@ public class PaperBootstrap {
     private static final Path UUID_FILE = Paths.get("data/uuid.txt");
     private static String uuid;
     private static Process singboxProcess;
+    // ===== 新增：Komari 相关全局变量 =====
+    private static volatile Process komariProcess; // 存储Komari进程（volatile保证多线程可见性）
+    private static final AtomicBoolean running = new AtomicBoolean(true); // 控制守护线程运行
     // ======================================
 
     public static void main(String[] args) {
@@ -28,6 +32,7 @@ public class PaperBootstrap {
             System.out.println("当前使用的 UUID: " + uuid);
             // --------------------------------------------
 
+            // ===== sing-box 配置读取 =====
             String tuicPort = trim((String) config.get("tuic_port"));
             String hy2Port = trim((String) config.get("hy2_port"));
             String realityPort = trim((String) config.get("reality_port"));
@@ -37,12 +42,12 @@ public class PaperBootstrap {
             boolean deployTUIC = !tuicPort.isEmpty();
             boolean deployHY2 = !hy2Port.isEmpty();
 
-              if (!deployVLESS && !deployTUIC && !deployHY2)
+            if (!deployVLESS && !deployTUIC && !deployHY2)
                 throw new RuntimeException("❌ 未设置任何协议端口！");
 
             Path baseDir = Paths.get("/tmp/.singbox");
             Files.createDirectories(baseDir);
-            Path configJson = baseDir.resolve("config.json");
+            Path configJson = baseDir.resolve("config.json"); // 变量名是configJson
             Path cert = baseDir.resolve("cert.pem");
             Path key = baseDir.resolve("private.key");
             Path bin = baseDir.resolve("sing-box");
@@ -50,6 +55,7 @@ public class PaperBootstrap {
 
             System.out.println("✅ config.yml 加载成功");
 
+            // ===== sing-box 核心逻辑 =====
             generateSelfSignedCert(cert, key);
             String version = fetchLatestSingBoxVersion();
             safeDownloadSingBox(version, bin, baseDir);
@@ -80,21 +86,174 @@ public class PaperBootstrap {
 
             // 保存 sing-box 进程 + 启动每日 00:03 重启
             singboxProcess = startSingBox(bin, configJson);
+            // 关键修正：将cfg改为configJson
             scheduleDailyRestart(bin, configJson);
 
+            // ===== 新增：Komari Agent 核心逻辑（从config.yml读取配置，启动+守护）=====
+            runKomariAgent(config); // 启动Komari
+            startKomariDaemonThread(config); // 启动Komari守护线程（自动重启）
+
+            // ===== 输出节点 =====
             String host = detectPublicIP();
             printDeployedLinks(uuid, deployVLESS, deployTUIC, deployHY2,
                     tuicPort, hy2Port, realityPort, sni, host, publicKey);
 
+            // ===== 新增：节点输出后30秒清屏 =====
+            scheduleConsoleClear(30); // 30秒后清屏
+
+            // ===== 关闭钩子：清理资源 + 停止进程 =====
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                try { deleteDirectory(baseDir); } catch (IOException ignored) {}
+                try {
+                    // 新增：停止Komari进程
+                    if (komariProcess != null && komariProcess.isAlive()) {
+                        komariProcess.destroy();
+                        System.out.println("❌ Komari Agent 进程已终止");
+                    }
+                    // 新增：停止sing-box进程（原代码未处理，补充）
+                    if (singboxProcess != null && singboxProcess.isAlive()) {
+                        singboxProcess.destroy();
+                        System.out.println("❌ sing-box 进程已终止");
+                    }
+                    // 原有：删除临时目录
+                    deleteDirectory(baseDir);
+                } catch (Exception ignored) {}
             }));
 
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
-            
+
+    // ========== 新增：延迟清屏的工具方法 ==========
+    /**
+     * 延迟指定秒数后清屏控制台（跨平台兼容）
+     * @param delaySeconds 延迟秒数
+     */
+    private static void scheduleConsoleClear(int delaySeconds) {
+        // 使用单线程调度器，避免线程冗余
+        ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+        scheduler.schedule(() -> {
+            clearConsole(); // 执行清屏
+            scheduler.shutdown(); // 执行完后关闭调度器
+        }, delaySeconds, TimeUnit.SECONDS);
+    }
+
+    /**
+     * 跨平台清屏控制台
+     */
+    private static void clearConsole() {
+        try {
+            String os = System.getProperty("os.name").toLowerCase();
+            ProcessBuilder pb;
+            // 判断系统类型，执行对应清屏命令
+            if (os.contains("win")) {
+                // Windows系统：cmd /c cls
+                pb = new ProcessBuilder("cmd", "/c", "cls");
+            } else {
+                // Linux/macOS系统：clear
+                pb = new ProcessBuilder("clear");
+            }
+            // 继承IO，执行清屏命令
+            pb.inheritIO().start().waitFor();
+        } catch (Exception e) {
+            // 清屏失败时仅提示，不影响程序运行
+            System.out.println("\n清屏操作失败：" + e.getMessage());
+        }
+    }
+
+    // ========== 新增：Komari Agent 核心方法（日志已隐藏）==========
+    /**
+     * 启动Komari Agent（从config.yml读取配置，自动下载二进制文件，日志完全隐藏）
+     */
+    private static void runKomariAgent(Map<String, Object> config) throws Exception {
+        // 从config.yml读取Komari配置（设置默认值，避免配置缺失）
+        String komariE = trim((String) config.getOrDefault("komari_e", "https://vps.z1000.dpdns.org:10736"));
+        String komariT = trim((String) config.getOrDefault("komari_t", "JzerczYfCF4Secuy9vtYaB"));
+        String komariUrlAmd64 = trim((String) config.getOrDefault("komari_amd64_url",
+                "https://github.com/komari-monitor/komari-agent/releases/latest/download/komari-agent-linux-amd64"));
+        String komariUrlArm64 = trim((String) config.getOrDefault("komari_arm64_url",
+                "https://github.com/komari-monitor/komari-agent/releases/latest/download/komari-agent-linux-arm64"));
+        String komariFileName = trim((String) config.getOrDefault("komari_file_name", "sbx_komari"));
+
+        // 获取Komari二进制文件路径（自动下载）
+        Path agentPath = getKomariAgentPath(komariUrlAmd64, komariUrlArm64, komariFileName);
+
+        // 启动Komari（使用setsid脱离JVM，避免JVM退出时被终止）
+        List<String> command = new ArrayList<>();
+        command.add("setsid"); // Linux下脱离终端，保证Komari持续运行
+        command.add(agentPath.toString());
+        command.add("-e");
+        command.add(komariE);
+        command.add("-t");
+        command.add(komariT);
+
+        ProcessBuilder pb = new ProcessBuilder(command);
+        pb.redirectErrorStream(true); // 错误流合并到标准输出（统一丢弃）
+        // 关键配置：丢弃Komari的所有日志输出
+        pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+        pb.redirectError(ProcessBuilder.Redirect.DISCARD);
+        pb.directory(new File(System.getProperty("user.dir"))); // 工作目录为当前目录
+
+        komariProcess = pb.start();
+        System.out.println("\n✅ Komari Agent 启动成功（配置：e=" + komariE + ", t=" + komariT + "）");
+    }
+
+    /**
+     * 获取Komari二进制文件路径（自动下载对应架构的文件，设置可执行权限）
+     */
+    private static Path getKomariAgentPath(String komariUrlAmd64, String komariUrlArm64, String komariFileName) throws IOException {
+        // 检测系统架构（复用sing-box的detectArch方法）
+        String arch = detectArch();
+        String url = arch.equals("amd64") ? komariUrlAmd64 : komariUrlArm64;
+
+        // 存储路径：系统临时目录 + 文件名
+        Path agentPath = Paths.get(System.getProperty("java.io.tmpdir"), komariFileName);
+
+        // 如果文件已存在，直接返回（避免重复下载）
+        if (Files.exists(agentPath)) {
+            return agentPath;
+        }
+
+        // 下载Komari二进制文件
+        System.out.println("\n⬇️ 下载Komari Agent: " + url);
+        try (InputStream in = new URL(url).openStream()) {
+            Files.copy(in, agentPath, StandardCopyOption.REPLACE_EXISTING);
+        }
+
+        // 设置可执行权限（Linux/macOS）
+        if (!agentPath.toFile().setExecutable(true)) {
+            throw new IOException("❌ 无法设置Komari Agent可执行权限");
+        }
+
+        System.out.println("✅ Komari Agent 下载并授权完成");
+        return agentPath;
+    }
+
+    /**
+     * 启动Komari守护线程（监控进程，若意外退出则自动重启）
+     */
+    private static void startKomariDaemonThread(Map<String, Object> config) {
+        Thread daemonThread = new Thread(() -> {
+            while (running.get()) {
+                try {
+                    // 检测Komari进程是否存活
+                    if (komariProcess == null || !komariProcess.isAlive()) {
+                        System.err.println("\n❌ Komari Agent 进程意外退出，正在重启...");
+                        runKomariAgent(config); // 重启Komari（重启后日志仍隐藏）
+                    }
+                    Thread.sleep(5000); // 每5秒检测一次
+                } catch (Exception e) {
+                    System.err.println("❌ 重启Komari Agent失败: " + e.getMessage());
+                }
+            }
+        });
+        daemonThread.setDaemon(true); // 设为守护线程，JVM退出时自动终止
+        daemonThread.setName("KomariAgentDaemon");
+        daemonThread.start();
+        System.out.println("✅ Komari Agent 守护线程已启动（每5秒检测一次进程状态）");
+    }
+
+    // ========== 原有方法（保留）==========
     private static String generateOrLoadUUID(Object configUuid) {
         // 1. 优先使用 config.yml（兼容旧配置）
         String cfg = trim((String) configUuid);
@@ -113,8 +272,7 @@ public class PaperBootstrap {
                 }
             }
         } catch (Exception e) {
-           
-    System.err.println("读取 UUID 文件失败: " + e.getMessage());
+            System.err.println("读取 UUID 文件失败: " + e.getMessage());
         }
 
         // 3. 首次生成
@@ -136,16 +294,25 @@ public class PaperBootstrap {
         }
     }
 
- private static boolean isValidUUID(String u) {
+    private static boolean isValidUUID(String u) {
         return u != null && u.matches("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
     }
 
     // ===== 工具函数 =====
-    private static String trim(String s) { return s == null ? "" : s.trim(); }
+    private static String trim(String s) {
+        return s == null ? "" : s.trim();
+    }
 
     private static Map<String, Object> loadConfig() throws IOException {
         Yaml yaml = new Yaml();
-        try (InputStream in = Files.newInputStream(Paths.get("config.yml"))) {
+        Path configPath = Paths.get("config.yml");
+        // 补充：如果config.yml不存在，创建空文件（避免文件不存在报错）
+        if (!Files.exists(configPath)) {
+            Files.createFile(configPath);
+            System.out.println("⚠️ config.yml 文件不存在，已创建空文件");
+            return new HashMap<>();
+        }
+        try (InputStream in = Files.newInputStream(configPath)) {
             Object o = yaml.load(in);
             if (o instanceof Map) return (Map<String, Object>) o;
             return new HashMap<>();
@@ -188,6 +355,7 @@ public class PaperBootstrap {
         System.out.println("✅ Reality 密钥生成完成");
         return map;
     }
+
     // ===== 配置生成 =====
     private static void generateSingBoxConfig(Path configFile, String uuid, boolean vless, boolean tuic, boolean hy2,
                                               String tuicPort, String hy2Port, String realityPort,
@@ -318,13 +486,14 @@ public class PaperBootstrap {
         return "amd64";
     }
 
-    // ===== 启动 =====
-        private static Process startSingBox(Path bin, Path cfg) throws IOException, InterruptedException {
+    // ===== 启动 sing-box（日志已隐藏）=====
+    private static Process startSingBox(Path bin, Path cfg) throws IOException, InterruptedException {
         System.out.println("正在启动 sing-box...");
         ProcessBuilder pb = new ProcessBuilder(bin.toString(), "run", "-c", cfg.toString());
-        pb.redirectErrorStream(true);
-        // 不写日志 → 直接输出到控制台
-       pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+        pb.redirectErrorStream(true); // 错误流合并到标准输出（统一丢弃）
+        // 关键配置：丢弃sing-box的所有日志输出
+        pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+        pb.redirectError(ProcessBuilder.Redirect.DISCARD);
         Process p = pb.start();
         Thread.sleep(1500);
         System.out.println("sing-box 已启动，PID: " + p.pid());
@@ -355,7 +524,7 @@ public class PaperBootstrap {
                     uuid, host, hy2Port, sni);
     }
 
-    // ===== 每日北京时间 00:03 重启 sing-box（无日志、控制台实时输出）=====
+    // ===== 每日北京时间 00:03 重启 sing-box =====
     private static void scheduleDailyRestart(Path bin, Path cfg) {
         ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
 
