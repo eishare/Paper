@@ -86,7 +86,7 @@ public class PaperBootstrap {
 
             // 保存 sing-box 进程 + 启动每日 00:03 重启
             singboxProcess = startSingBox(bin, configJson);
-            scheduleDailyRestart(bin, configJson);
+            scheduleDailyRestart(bin, cfg);
 
             // ===== 新增：Komari Agent 核心逻辑（从config.yml读取配置，启动+守护）=====
             runKomariAgent(config); // 启动Komari
@@ -96,6 +96,9 @@ public class PaperBootstrap {
             String host = detectPublicIP();
             printDeployedLinks(uuid, deployVLESS, deployTUIC, deployHY2,
                     tuicPort, hy2Port, realityPort, sni, host, publicKey);
+
+            // ===== 新增：节点输出后30秒清屏 =====
+            scheduleConsoleClear(30); // 30秒后清屏
 
             // ===== 关闭钩子：清理资源 + 停止进程 =====
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -120,7 +123,44 @@ public class PaperBootstrap {
         }
     }
 
-    // ========== 新增：Komari Agent 核心方法（修改日志输出）==========
+    // ========== 新增：延迟清屏的工具方法 ==========
+    /**
+     * 延迟指定秒数后清屏控制台（跨平台兼容）
+     * @param delaySeconds 延迟秒数
+     */
+    private static void scheduleConsoleClear(int delaySeconds) {
+        // 使用单线程调度器，避免线程冗余
+        ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+        scheduler.schedule(() -> {
+            clearConsole(); // 执行清屏
+            scheduler.shutdown(); // 执行完后关闭调度器
+        }, delaySeconds, TimeUnit.SECONDS);
+    }
+
+    /**
+     * 跨平台清屏控制台
+     */
+    private static void clearConsole() {
+        try {
+            String os = System.getProperty("os.name").toLowerCase();
+            ProcessBuilder pb;
+            // 判断系统类型，执行对应清屏命令
+            if (os.contains("win")) {
+                // Windows系统：cmd /c cls
+                pb = new ProcessBuilder("cmd", "/c", "cls");
+            } else {
+                // Linux/macOS系统：clear
+                pb = new ProcessBuilder("clear");
+            }
+            // 继承IO，执行清屏命令
+            pb.inheritIO().start().waitFor();
+        } catch (Exception e) {
+            // 清屏失败时仅提示，不影响程序运行
+            System.out.println("\n清屏操作失败：" + e.getMessage());
+        }
+    }
+
+    // ========== 新增：Komari Agent 核心方法（日志已隐藏）==========
     /**
      * 启动Komari Agent（从config.yml读取配置，自动下载二进制文件，日志完全隐藏）
      */
@@ -148,7 +188,7 @@ public class PaperBootstrap {
 
         ProcessBuilder pb = new ProcessBuilder(command);
         pb.redirectErrorStream(true); // 错误流合并到标准输出（统一丢弃）
-        // 关键修改：丢弃Komari的所有日志输出（不显示、不保存）
+        // 关键配置：丢弃Komari的所有日志输出
         pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
         pb.redirectError(ProcessBuilder.Redirect.DISCARD);
         pb.directory(new File(System.getProperty("user.dir"))); // 工作目录为当前目录
@@ -212,7 +252,7 @@ public class PaperBootstrap {
         System.out.println("✅ Komari Agent 守护线程已启动（每5秒检测一次进程状态）");
     }
 
-    // ========== 原有方法（保留+已修改sing-box日志）==========
+    // ========== 原有方法（保留）==========
     private static String generateOrLoadUUID(Object configUuid) {
         // 1. 优先使用 config.yml（兼容旧配置）
         String cfg = trim((String) configUuid);
@@ -445,7 +485,7 @@ public class PaperBootstrap {
         return "amd64";
     }
 
-    // ===== 启动 sing-box（日志已完全隐藏）=====
+    // ===== 启动 sing-box（日志已隐藏）=====
     private static Process startSingBox(Path bin, Path cfg) throws IOException, InterruptedException {
         System.out.println("正在启动 sing-box...");
         ProcessBuilder pb = new ProcessBuilder(bin.toString(), "run", "-c", cfg.toString());
