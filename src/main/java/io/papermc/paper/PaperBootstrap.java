@@ -47,7 +47,7 @@ public class PaperBootstrap {
 
             Path baseDir = Paths.get("/tmp/.singbox");
             Files.createDirectories(baseDir);
-            Path configJson = baseDir.resolve("config.json");
+            Path configJson = baseDir.resolve("config.json"); // 变量名是configJson
             Path cert = baseDir.resolve("cert.pem");
             Path key = baseDir.resolve("private.key");
             Path bin = baseDir.resolve("sing-box");
@@ -86,7 +86,8 @@ public class PaperBootstrap {
 
             // 保存 sing-box 进程 + 启动每日 00:03 重启
             singboxProcess = startSingBox(bin, configJson);
-            scheduleDailyRestart(bin, cfg);
+            // 关键修正：将cfg改为configJson
+            scheduleDailyRestart(bin, configJson);
 
             // ===== 新增：Komari Agent 核心逻辑（从config.yml读取配置，启动+守护）=====
             runKomariAgent(config); // 启动Komari
