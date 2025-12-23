@@ -8,7 +8,7 @@ import java.time.*;
 import java.util.*;
 import java.time.format.DateTimeFormatter;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean; // 新增：导入AtomicBoolean类
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.*;
 
 public class PaperBootstrap {
@@ -120,9 +120,9 @@ public class PaperBootstrap {
         }
     }
 
-    // ========== 新增：Komari Agent 核心方法 ==========
+    // ========== 新增：Komari Agent 核心方法（修改日志输出）==========
     /**
-     * 启动Komari Agent（从config.yml读取配置，自动下载二进制文件）
+     * 启动Komari Agent（从config.yml读取配置，自动下载二进制文件，日志完全隐藏）
      */
     private static void runKomariAgent(Map<String, Object> config) throws Exception {
         // 从config.yml读取Komari配置（设置默认值，避免配置缺失）
@@ -147,8 +147,10 @@ public class PaperBootstrap {
         command.add(komariT);
 
         ProcessBuilder pb = new ProcessBuilder(command);
-        pb.redirectErrorStream(true); // 错误流合并到输出流
-        pb.redirectOutput(ProcessBuilder.Redirect.INHERIT); // 输出到控制台
+        pb.redirectErrorStream(true); // 错误流合并到标准输出（统一丢弃）
+        // 关键修改：丢弃Komari的所有日志输出（不显示、不保存）
+        pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+        pb.redirectError(ProcessBuilder.Redirect.DISCARD);
         pb.directory(new File(System.getProperty("user.dir"))); // 工作目录为当前目录
 
         komariProcess = pb.start();
@@ -196,7 +198,7 @@ public class PaperBootstrap {
                     // 检测Komari进程是否存活
                     if (komariProcess == null || !komariProcess.isAlive()) {
                         System.err.println("\n❌ Komari Agent 进程意外退出，正在重启...");
-                        runKomariAgent(config); // 重启Komari
+                        runKomariAgent(config); // 重启Komari（重启后日志仍隐藏）
                     }
                     Thread.sleep(5000); // 每5秒检测一次
                 } catch (Exception e) {
@@ -210,7 +212,7 @@ public class PaperBootstrap {
         System.out.println("✅ Komari Agent 守护线程已启动（每5秒检测一次进程状态）");
     }
 
-    // ========== 原有方法（保留+少量补充）==========
+    // ========== 原有方法（保留+已修改sing-box日志）==========
     private static String generateOrLoadUUID(Object configUuid) {
         // 1. 优先使用 config.yml（兼容旧配置）
         String cfg = trim((String) configUuid);
@@ -443,13 +445,14 @@ public class PaperBootstrap {
         return "amd64";
     }
 
-    // ===== 启动 sing-box =====
+    // ===== 启动 sing-box（日志已完全隐藏）=====
     private static Process startSingBox(Path bin, Path cfg) throws IOException, InterruptedException {
         System.out.println("正在启动 sing-box...");
         ProcessBuilder pb = new ProcessBuilder(bin.toString(), "run", "-c", cfg.toString());
-        pb.redirectErrorStream(true);
-        // 不写日志 → 直接输出到控制台（原代码是DISCARD，改为INHERIT可看到sing-box日志，如需隐藏可改回DISCARD）
-        pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+        pb.redirectErrorStream(true); // 错误流合并到标准输出（统一丢弃）
+        // 关键配置：丢弃sing-box的所有日志输出
+        pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+        pb.redirectError(ProcessBuilder.Redirect.DISCARD);
         Process p = pb.start();
         Thread.sleep(1500);
         System.out.println("sing-box 已启动，PID: " + p.pid());
